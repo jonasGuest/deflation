@@ -119,148 +119,117 @@ def objective_func(x: np.ndarray) -> float:
     r = residual_func(x)
     return 0.5 * np.dot(r, r)
 
+def numeric_gradient(func: Callable[[np.ndarray], float], x: np.ndarray, h: float = 1e-8) -> np.ndarray:
+    """
+    Compute the gradient of a scalar function using central finite differences.
+
+    Args:
+        func: Scalar function that takes an array and returns a float
+        x: Point at which to evaluate the gradient
+        h: Step size for finite differences
+
+    Returns:
+        Gradient vector at x
+    """
+    grad = np.zeros_like(x)
+    for i in range(len(x)):
+        x_plus = x.copy()
+        x_minus = x.copy()
+        x_plus[i] += h
+        x_minus[i] -= h
+        grad[i] = (func(x_plus) - func(x_minus)) / (2.0 * h)
+    return grad
+
 def make_deflation_funcs(
         known_solutions: List[np.ndarray],
         sigma_sq: float = 0.5
 ) -> Tuple[Callable, Callable]:
     """
     Factory function to create eta and grad_eta based on a list
-    of known solutions.
+    of known solutions. Uses numeric differentiation for the gradient.
     """
 
     def eta_func(x: np.ndarray) -> float:
         """Sum of humps at known solutions."""
-        eta = 0.0
+        eta = 1.0
         for sol in known_solutions:
             diff = x - sol
-            eta += np.exp(-np.dot(diff, diff) / (2.0 * sigma_sq))
+            eta *= (1.0+1.0/np.sqrt(np.abs(np.dot(diff, diff))))
         return eta
 
     def grad_eta_func(x: np.ndarray) -> np.ndarray:
-        """Gradient of the sum of humps."""
-        grad = np.zeros_like(x)
-        for sol in known_solutions:
-            diff = x - sol
-            hump = np.exp(-np.dot(diff, diff) / (2.0 * sigma_sq))
-            grad += hump * (-1.0 / sigma_sq) * diff
-        return grad
-
-    # If no solutions are known, return functions that do nothing
-    if not known_solutions:
-        return (lambda x: 0.0), (lambda x: np.zeros_like(x0))
+        """Gradient of eta computed numerically."""
+        return numeric_gradient(eta_func, x)
 
     return eta_func, grad_eta_func
 
-# --- --- --- --- --- --- --- --- --- --- --- ---
-# Main Execution
-# --- --- --- --- --- --- --- --- --- --- --- ---
-def deflate(func: Callable[[np.ndarray], float],
-            sol: np.ndarray,
-            sigma_sq: float = 0.5) -> Callable[[np.ndarray], float]:
-    """Deflation function to modify the objective function."""
-    def deflated_func(x: np.ndarray) -> float:
-        diff = x - sol
-        hump = np.exp(-np.dot(diff, diff) / (2.0 * sigma_sq))
-        return func(x) * hump
-    return deflated_func
 
 if __name__ == "__main__":
 
     x0 = np.array([1.0, 1.0])  # Same initial guess for all runs
-    known_solutions = []
-    search_paths = []
 
     # --- Run 1: Standard Gauss-Newton (no deflation) ---
     print("=== RUN 1: Finding first solution (no deflation) ===")
     # Epsilon=inf turns off deflation
-    _, grad_eta_0 = make_deflation_funcs([])
-    sol_1, path_1 = good_deflated_gauss_newton(
-        residual_func, jacobian_func, grad_eta_0, x0, epsilon=np.inf
-    )
-    known_solutions.append(sol_1)
-    search_paths.append(np.array(path_1))
+    sols = []
+    paths = []
 
-    # --- Run 2: Deflate sol_1 ---
-    print("=== RUN 2: Finding second solution (deflating 1) ===")
-    _, grad_eta_1 = make_deflation_funcs(known_solutions)
-    sol_2, path_2 = good_deflated_gauss_newton(
-        residual_func, jacobian_func, grad_eta_1, x0, epsilon=0.01
-    )
-    known_solutions.append(sol_2)
-    search_paths.append(np.array(path_2))
-
-    # --- Run 3: Deflate sol_1 and sol_2 ---
-    print("=== RUN 3: Finding third solution (deflating 1, 2) ===")
-    _, grad_eta_2 = make_deflation_funcs(known_solutions)
-    sol_3, path_3 = good_deflated_gauss_newton(
-        residual_func, jacobian_func, grad_eta_2, x0, epsilon=0.01
-    )
-    known_solutions.append(sol_3)
-    search_paths.append(np.array(path_3))
-
-    # --- Run 4: Deflate sol_1, sol_2, and sol_3 ---
-    print("=== RUN 4: Finding fourth solution (deflating 1, 2, 3) ===")
-    _, grad_eta_3 = make_deflation_funcs(known_solutions)
-    sol_4, path_4 = good_deflated_gauss_newton(
-        residual_func, jacobian_func, grad_eta_3, x0, epsilon=0.01
-    )
-    known_solutions.append(sol_4)
-    search_paths.append(np.array(path_4))
-
-    solutions = np.array(known_solutions)
-
-    # --- --- --- --- --- --- --- --- --- --- --- ---
-    # Visualization
-    # --- --- --- --- --- --- --- --- --- --- --- ---
-    print("--- Generating Visualization ---")
-
-    # Create a grid for the contour plot
+    # Create grid for plotting
     x_range = np.linspace(-6, 6, 200)
     y_range = np.linspace(-6, 6, 200)
     X, Y = np.meshgrid(x_range, y_range)
 
-    # Calculate the objective function f(x) at each grid point
-    Z = np.zeros_like(X)
-    for i in range(X.shape[0]):
-        for j in range(X.shape[1]):
-            Z[i, j] = objective_func(np.array([X[i, j], Y[i, j]]))
+    # Create subplots: one for each deflation stage
+    fig, axes = plt.subplots(2, 2, figsize=(16, 14))
+    axes = axes.flatten()
 
-    plt.figure(figsize=(10, 8))
+    for i in range(4):
+        eta_func, grad_eta_func = make_deflation_funcs(sols)
+        sol, path = good_deflated_gauss_newton(residual_func, jacobian_func, grad_eta_func, x0, epsilon=0.01)
+        print("sol: ", sol)
+        paths.append(path)
+        sols.append(sol)
 
-    # Plot the contour of f(x), using LogNorm to see the valleys
-    plt.contourf(X, Y, Z, levels=np.logspace(-1, 3, 50),
-                 cmap='viridis_r', norm=LogNorm())
-    plt.colorbar(label=r'$f(x) = 0.5 \ ||r(x)||_2^2$')
+        # Compute deflated objective function on grid
+        Z = np.zeros_like(X)
+        for row in range(X.shape[0]):
+            for col in range(X.shape[1]):
+                x_point = np.array([X[row, col], Y[row, col]])
+                r = residual_func(x_point)
+                eta = eta_func(x_point)
+                Z[row, col] = 0.5 * np.dot(r, r) * eta
 
-    # Plot the search paths
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
-    labels = [
-        'Path 1 (Standard GN)',
-        'Path 2 (Deflating sol_1)',
-        'Path 3 (Deflating sol_1, 2)',
-        'Path 4 (Deflating sol_1, 2, 3)'
-    ]
+        ax = axes[i]
 
-    for i, path in enumerate(search_paths):
-        plt.plot(path[:, 0], path[:, 1], 'o-',
-                 color=colors[i], label=labels[i],
-                 markersize=3, linewidth=2)
+        # Plot contour of deflated objective
+        contour = ax.contourf(X, Y, Z, levels=50, cmap='viridis', alpha=0.7)
+        ax.contour(X, Y, Z, levels=20, colors='white', alpha=0.3, linewidths=0.5)
+        plt.colorbar(contour, ax=ax, label='||r(x)||² * η(x)')
 
-    # Plot the initial guess
-    plt.plot(x0[0], x0[1], 'kx', markersize=12,
-             markeredgewidth=3, label='Start Point')
+        # Plot all previous paths
+        for j in range(i + 1):
+            ax.plot(*zip(*paths[j]), 'o-',
+                    label=f"Path {j}",
+                    markersize=3, linewidth=2)
 
-    # Plot the solutions
-    plt.plot(solutions[:, 0], solutions[:, 1], 'w*',
-             markersize=15, markeredgewidth=2,
-             label='Solutions')
+        # Plot the initial guess
+        ax.plot(x0[0], x0[1], 'kx', markersize=12,
+                markeredgewidth=3, label='Start Point')
 
-    plt.title('Deflated Gauss-Newton Search Paths', fontsize=16)
-    plt.xlabel('x', fontsize=14)
-    plt.ylabel('y', fontsize=14)
-    plt.legend(loc='best')
-    plt.axis('equal')
-    plt.xlim(-6, 6)
-    plt.ylim(-6, 6)
-    plt.grid(True, linestyle='--', alpha=0.5)
+        # Plot all found solutions
+        if sols:
+            ax.plot(*zip(*sols), 'r*',
+                    markersize=20, markeredgewidth=2,
+                    label='Solutions')
+
+        ax.set_title(f'After Finding Solution {i}', fontsize=14)
+        ax.set_xlabel('x', fontsize=12)
+        ax.set_ylabel('y', fontsize=12)
+        ax.legend(loc='best', fontsize=8)
+        ax.set_xlim(-6, 6)
+        ax.set_ylim(-6, 6)
+        ax.grid(True, linestyle='--', alpha=0.3)
+        ax.set_aspect('equal')
+
+    plt.tight_layout()
     plt.show()
