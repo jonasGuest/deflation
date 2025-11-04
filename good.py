@@ -81,14 +81,14 @@ def good_deflated_gauss_newton(
         verbose: bool = True
 ) -> Tuple[np.ndarray, List[np.ndarray]]:
     """Implements the 'good' deflated Gauss-Newton method (Algorithm 3.2)."""
-
     x_k = np.array(x0, dtype=float)
     history = [x_k]
 
     if verbose:
         print(f"--- Starting search from x0 = {x_k} ---")
 
-    for k in range(max_iter):
+    k=0
+    while True:
         r_k = r_func(x_k)
         J_k = J_func(x_k)
 
@@ -104,6 +104,9 @@ def good_deflated_gauss_newton(
             if verbose:
                 print(f"Iter {k}: Converged (step norm {step_norm:.2e} < {tol:.2e})")
             break
+        if k == max_iter - 1 and verbose:
+            print(f"Warning: Max iterations ({max_iter}) reached.")
+            break
 
         grad_eta_k = grad_eta_func(x_k)
         inner_prod = np.dot(p_k, grad_eta_k)
@@ -115,29 +118,16 @@ def good_deflated_gauss_newton(
                 step = (1.0 / beta) * p_k
                 x_k = x_k + step
                 deflated_step = True
-                # if verbose:
-                #     print(f"Iter {k}: Deflated step (beta={beta:.2f})")
 
         if not deflated_step:
             grad_f_k = J_k.T @ r_k
             alpha = _backtracking_line_search(r_func, grad_f_k, x_k, p_k)
             x_k = x_k + alpha * p_k
-            # if verbose:
-            #     print(f"Iter {k}: Standard step (alpha={alpha:.2f})")
 
         history.append(x_k)
+        k+=1
 
-    if k == max_iter - 1 and verbose:
-        print(f"Warning: Max iterations ({max_iter}) reached.")
-
-    if verbose:
-        print(f"Final solution: {x_k}\n")
     return x_k, history
-
-
-# --- --- --- --- --- --- --- --- --- --- --- ---
-# Test Problem Setup
-# --- --- --- --- --- --- --- --- --- --- --- ---
 
 def residual_func(x: np.ndarray) -> np.ndarray:
     """r(x,y) = [x^2 + y - 11, x + y^2 - 7]"""
@@ -145,6 +135,10 @@ def residual_func(x: np.ndarray) -> np.ndarray:
         x[0]**2 + x[1] - 11.0,
         x[0] + x[1]**2 - 7.0
     ])
+def residual_scalar_func(x: np.ndarray) -> float:
+    """Scalar objective: 0.5 * ||r(x,y)||^2"""
+    r = residual_func(x)
+    return 0.5 * np.dot(r, r)
 
 def jacobian_func(x: np.ndarray) -> np.ndarray:
     """Jacobian of r(x,y)"""
@@ -176,15 +170,15 @@ def numeric_gradient(func: Callable[[np.ndarray], float], x: np.ndarray, h: floa
 
 def make_deflation_funcs(
         known_solutions: List[np.ndarray],
-        sigma_sq: float = 0.5
 ) -> Tuple[Callable, Callable]:
     def eta_func(x: np.ndarray) -> float:
         """Sum of humps at known solutions."""
         eta = 1.0
         for sol in known_solutions:
             diff = x - sol
-            eta *= (1.0+1.0/np.abs(np.dot(diff, diff)))
-        return eta
+            eta *= 1.0+1.0/np.abs(np.dot(diff, diff))
+        return np.log(eta)
+
 
     def grad_eta_func(x: np.ndarray) -> np.ndarray:
         """Gradient of eta computed numerically."""
@@ -211,7 +205,7 @@ if __name__ == "__main__":
     # Create subplots: two rows (eta and deflated objective) x 4 columns (each step)
     fig, axes = plt.subplots(2, 5, figsize=(20, 10))
 
-    for i in range(5):
+    for i in range(4):
         eta_func, grad_eta_func = make_deflation_funcs(sols)
         sol, path = good_deflated_gauss_newton(residual_func, jacobian_func, grad_eta_func, x0, epsilon=0.01)
         print("sol: ", sol)
@@ -224,10 +218,9 @@ if __name__ == "__main__":
         for row in range(X.shape[0]):
             for col in range(X.shape[1]):
                 x_point = np.array([X[row, col], Y[row, col]])
-                r = residual_func(x_point)
                 eta = eta_func(x_point)
                 Z_eta[row, col] = eta
-                Z_deflated[row, col] = 0.5 * np.dot(r, r) * eta
+                Z_deflated[row, col] = residual_scalar_func(x_point)
 
         # Top row: eta function
         ax_eta = axes[0, i]
@@ -284,3 +277,5 @@ if __name__ == "__main__":
 
     plt.tight_layout()
     plt.show()
+
+    print(f"All found solutions: {sols}")
