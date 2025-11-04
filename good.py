@@ -3,10 +3,6 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from typing import Callable, List, Tuple
 
-# --- --- --- --- --- --- --- --- --- --- --- ---
-# Algorithm 3.2 (from previous response)
-# --- --- --- --- --- --- --- --- --- --- --- ---
-
 def _backtracking_line_search(
         r_func: Callable[[np.ndarray], np.ndarray],
         grad_f_k: np.ndarray,
@@ -15,21 +11,64 @@ def _backtracking_line_search(
         c: float = 1e-4,
         tau: float = 0.5
 ) -> float:
-    """Implements a backtracking line search."""
     r_k = r_func(x_k)
     f_k = 0.5 * np.sum(r_k**2)
-    slope = np.dot(grad_f_k, p_k)
-    alpha = 1.0
 
-    while True:
+    # Compute directional derivative: slope = ∇f(x_k)^T * p_k
+    slope = np.dot(grad_f_k, p_k)
+
+    # Try more aggressive initial step size
+    alpha = 2.0
+    alpha_prev = 0.0
+    f_prev = f_k
+
+    for iteration in range(20):  # Max line search iterations
+        # Try step x_new = x_k + alpha * p_k
         x_new = x_k + alpha * p_k
         r_new = r_func(x_new)
         f_new = 0.5 * np.sum(r_new**2)
+
+        # Armijo condition
         if f_new <= f_k + c * alpha * slope:
             return alpha
-        alpha *= tau
+
+        # Use cubic interpolation to find better alpha
+        if iteration == 0:
+            # First backtrack: use quadratic interpolation
+            alpha_new = -0.5 * slope * alpha**2 / (f_new - f_k - slope * alpha)
+        else:
+            # Subsequent backtracks: use cubic interpolation
+            # Fit cubic to f(0), f'(0), f(alpha_prev), f(alpha)
+            a = (1.0 / (alpha - alpha_prev)) * (
+                (f_new - f_k - slope * alpha) / alpha**2 -
+                (f_prev - f_k - slope * alpha_prev) / alpha_prev**2
+            )
+            b = (1.0 / (alpha - alpha_prev)) * (
+                -(f_new - f_k - slope * alpha) * alpha_prev / alpha**2 +
+                (f_prev - f_k - slope * alpha_prev) * alpha / alpha_prev**2
+            )
+
+            # Solve cubic: alpha_new = (-b + sqrt(b^2 - 3*a*slope)) / (3*a)
+            discriminant = b**2 - 3.0 * a * slope
+            if discriminant < 0 or abs(a) < 1e-10:
+                # Fall back to simple backtracking
+                alpha_new = tau * alpha
+            else:
+                alpha_new = (-b + np.sqrt(discriminant)) / (3.0 * a)
+
+        # Safeguard: ensure new alpha is reasonable
+        alpha_new = max(0.1 * alpha, min(0.5 * alpha, alpha_new))
+
+        # Update for next iteration
+        alpha_prev = alpha
+        f_prev = f_new
+        alpha = alpha_new
+
+        # Safety check: if alpha becomes too small, give up
         if alpha < 1e-9:
             return alpha
+
+    return alpha
 
 def good_deflated_gauss_newton(
         r_func: Callable[[np.ndarray], np.ndarray],
@@ -114,11 +153,6 @@ def jacobian_func(x: np.ndarray) -> np.ndarray:
         [1.0, 2.0 * x[1]]
     ])
 
-def objective_func(x: np.ndarray) -> float:
-    """f(x) = 0.5 * ||r(x)||^2"""
-    r = residual_func(x)
-    return 0.5 * np.dot(r, r)
-
 def numeric_gradient(func: Callable[[np.ndarray], float], x: np.ndarray, h: float = 1e-8) -> np.ndarray:
     """
     Compute the gradient of a scalar function using central finite differences.
@@ -144,17 +178,12 @@ def make_deflation_funcs(
         known_solutions: List[np.ndarray],
         sigma_sq: float = 0.5
 ) -> Tuple[Callable, Callable]:
-    """
-    Factory function to create eta and grad_eta based on a list
-    of known solutions. Uses numeric differentiation for the gradient.
-    """
-
     def eta_func(x: np.ndarray) -> float:
         """Sum of humps at known solutions."""
         eta = 1.0
         for sol in known_solutions:
             diff = x - sol
-            eta *= (1.0+1.0/np.sqrt(np.abs(np.dot(diff, diff))))
+            eta *= (1.0+1.0/np.abs(np.dot(diff, diff)))
         return eta
 
     def grad_eta_func(x: np.ndarray) -> np.ndarray:
@@ -175,61 +204,83 @@ if __name__ == "__main__":
     paths = []
 
     # Create grid for plotting
-    x_range = np.linspace(-6, 6, 200)
-    y_range = np.linspace(-6, 6, 200)
+    x_range = np.linspace(-4, 4, 200)
+    y_range = np.linspace(-4, 4, 200)
     X, Y = np.meshgrid(x_range, y_range)
 
-    # Create subplots: one for each deflation stage
-    fig, axes = plt.subplots(2, 2, figsize=(16, 14))
-    axes = axes.flatten()
+    # Create subplots: two rows (eta and deflated objective) x 4 columns (each step)
+    fig, axes = plt.subplots(2, 5, figsize=(20, 10))
 
-    for i in range(4):
+    for i in range(5):
         eta_func, grad_eta_func = make_deflation_funcs(sols)
         sol, path = good_deflated_gauss_newton(residual_func, jacobian_func, grad_eta_func, x0, epsilon=0.01)
         print("sol: ", sol)
         paths.append(path)
         sols.append(sol)
 
-        # Compute deflated objective function on grid
-        Z = np.zeros_like(X)
+        # Compute eta function and deflated objective function on grid
+        Z_eta = np.zeros_like(X)
+        Z_deflated = np.zeros_like(X)
         for row in range(X.shape[0]):
             for col in range(X.shape[1]):
                 x_point = np.array([X[row, col], Y[row, col]])
                 r = residual_func(x_point)
                 eta = eta_func(x_point)
-                Z[row, col] = 0.5 * np.dot(r, r) * eta
+                Z_eta[row, col] = eta
+                Z_deflated[row, col] = 0.5 * np.dot(r, r) * eta
 
-        ax = axes[i]
+        # Top row: eta function
+        ax_eta = axes[0, i]
+        contour_eta = ax_eta.contourf(X, Y, Z_eta, levels=200, cmap='plasma', alpha=0.7, norm=LogNorm())
+        ax_eta.contour(X, Y, Z_eta, levels=50, colors='white', alpha=0.3, linewidths=0.5)
+        plt.colorbar(contour_eta, ax=ax_eta, label='η(x) (log scale)')
 
-        # Plot contour of deflated objective
-        contour = ax.contourf(X, Y, Z, levels=50, cmap='viridis', alpha=0.7)
-        ax.contour(X, Y, Z, levels=20, colors='white', alpha=0.3, linewidths=0.5)
-        plt.colorbar(contour, ax=ax, label='||r(x)||² * η(x)')
+        # Plot all found solutions on eta plot
+        if sols:
+            ax_eta.plot(*zip(*sols), 'r',
+                        markersize=20, markeredgewidth=2,
+                        label='Solutions')
+
+        ax_eta.set_title(f'η(x) After Solution {i}', fontsize=12)
+        ax_eta.set_xlabel('x', fontsize=10)
+        ax_eta.set_ylabel('y', fontsize=10)
+        ax_eta.set_xlim(-4, 4)
+        ax_eta.set_ylim(-4, 4)
+        ax_eta.grid(True, linestyle='--', alpha=0.3)
+        ax_eta.set_aspect('equal')
+        if sols:
+            ax_eta.legend(loc='upper right', fontsize=8)
+
+        # Bottom row: deflated objective
+        ax_deflated = axes[1, i]
+        contour_deflated = ax_deflated.contourf(X, Y, Z_deflated, levels=50, cmap='viridis', alpha=0.7)
+        ax_deflated.contour(X, Y, Z_deflated, levels=20, colors='white', alpha=0.3, linewidths=0.5)
+        plt.colorbar(contour_deflated, ax=ax_deflated, label='||r(x)||² * η(x)')
 
         # Plot all previous paths
         for j in range(i + 1):
-            ax.plot(*zip(*paths[j]), 'o-',
+            ax_deflated.plot(*zip(*paths[j]), 'o-',
                     label=f"Path {j}",
                     markersize=3, linewidth=2)
 
         # Plot the initial guess
-        ax.plot(x0[0], x0[1], 'kx', markersize=12,
+        ax_deflated.plot(x0[0], x0[1], 'kx', markersize=12,
                 markeredgewidth=3, label='Start Point')
 
         # Plot all found solutions
         if sols:
-            ax.plot(*zip(*sols), 'r*',
+            ax_deflated.plot(*zip(*sols), 'r',
                     markersize=20, markeredgewidth=2,
                     label='Solutions')
 
-        ax.set_title(f'After Finding Solution {i}', fontsize=14)
-        ax.set_xlabel('x', fontsize=12)
-        ax.set_ylabel('y', fontsize=12)
-        ax.legend(loc='best', fontsize=8)
-        ax.set_xlim(-6, 6)
-        ax.set_ylim(-6, 6)
-        ax.grid(True, linestyle='--', alpha=0.3)
-        ax.set_aspect('equal')
+        ax_deflated.set_title(f'Deflated Objective After Solution {i}', fontsize=12)
+        ax_deflated.set_xlabel('x', fontsize=10)
+        ax_deflated.set_ylabel('y', fontsize=10)
+        ax_deflated.legend(loc='best', fontsize=8)
+        ax_deflated.set_xlim(-4, 4)
+        ax_deflated.set_ylim(-4, 4)
+        ax_deflated.grid(True, linestyle='--', alpha=0.3)
+        ax_deflated.set_aspect('equal')
 
     plt.tight_layout()
     plt.show()
