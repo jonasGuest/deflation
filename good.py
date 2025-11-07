@@ -171,20 +171,20 @@ def numeric_gradient(func: Callable[[np.ndarray], float], x: np.ndarray, h: floa
 def make_deflation_funcs(
         known_solutions: List[np.ndarray],
 ) -> Tuple[Callable, Callable]:
-    def eta_func(x: np.ndarray) -> float:
+    def mu(x: np.ndarray) -> float:
         """Sum of humps at known solutions."""
         eta = 1.0
         for sol in known_solutions:
             diff = x - sol
             eta *= 1.0+1.0/np.abs(np.dot(diff, diff))
-        return np.log(eta)
+        return eta
 
 
-    def grad_eta_func(x: np.ndarray) -> np.ndarray:
+    def grad_eta(x: np.ndarray) -> np.ndarray:
         """Gradient of eta computed numerically."""
-        return numeric_gradient(eta_func, x)
+        return numeric_gradient(lambda y: np.log(mu(y)), x)
 
-    return eta_func, grad_eta_func
+    return mu, grad_eta
 
 
 if __name__ == "__main__":
