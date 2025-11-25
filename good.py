@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from typing import Callable, List, Tuple
+import sys
+import functions
 
 def _backtracking_line_search(
         r_func: Callable[[np.ndarray], np.ndarray],
@@ -75,7 +77,7 @@ def good_deflated_gauss_newton(
         J_func: Callable[[np.ndarray], np.ndarray],
         grad_eta_func: Callable[[np.ndarray], np.ndarray],
         x0: np.ndarray,
-        epsilon: float,
+        epsilon: float = 0.01,
         tol: float = 1e-7,
         max_iter: int = 100,
         verbose: bool = True
@@ -96,7 +98,7 @@ def good_deflated_gauss_newton(
             p_k, _, _, _ = np.linalg.lstsq(J_k, -r_k, rcond=None)
         except np.linalg.LinAlgError as e:
             if verbose:
-                print(f"Iter {k}: Singular matrix. Stopping. Error: {e}")
+                print(f"Iter {k}: Singular matrix. Stopping. Error: {e}", file=sys.stderr)
             break
 
         step_norm = np.linalg.norm(p_k)
@@ -279,3 +281,4 @@ if __name__ == "__main__":
     plt.show()
 
     print(f"All found solutions: {sols}")
+

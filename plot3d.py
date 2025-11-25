@@ -1,10 +1,26 @@
 # python
 import numpy as np
 import plotly.graph_objects as go
+from typing import Callable, Optional, Dict, Any, List
 from good import residual_scalar_func, make_deflation_funcs
 
 
-def plot3d(title, f, x_range, y_range, overlay_disk=None):
+def plot3d(
+    title: str,
+    f: Callable[[np.ndarray], float],
+    x_range: np.ndarray,
+    y_range: np.ndarray,
+    overlay_disk: Optional[Dict[str, Any]] = None
+) -> None:
+    """Plot a 3D surface of a scalar function.
+
+    Args:
+        title: Plot title
+        f: Function that takes numpy array of shape (2,) and returns a scalar
+        x_range: 1D numpy array of x coordinates
+        y_range: 1D numpy array of y coordinates
+        overlay_disk: Optional dictionary with disk overlay parameters
+    """
     X, Y = np.meshgrid(x_range, y_range)
 
     # Compute scalar residual: 0.5 * ||r(x)||^2
@@ -74,10 +90,14 @@ def plot3d(title, f, x_range, y_range, overlay_disk=None):
 
 
 if __name__ == "__main__":
-    solutions = [np.array([2.99999999, 1.99999999]), np.array([-3.77931025, -3.28318599]), np.array([3.58442834, -1.84812653]),
-                 np.array([-2.80511807, 3.13131252])]
+    solutions: List[np.ndarray] = [
+        np.array([2.99999999, 1.99999999]),
+        np.array([-3.77931025, -3.28318599]),
+        np.array([3.58442834, -1.84812653]),
+        np.array([-2.80511807, 3.13131252])
+    ]
     mu, grad_eta = make_deflation_funcs([solutions[0]])
-    g = lambda xy: residual_scalar_func(xy) * mu(xy)
+    g: Callable[[np.ndarray], float] = lambda xy: residual_scalar_func(xy) * mu(xy)
 
     # Grid setup
     N = 200
