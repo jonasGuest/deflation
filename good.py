@@ -5,70 +5,49 @@ from typing import Callable, List, Tuple
 import sys
 import functions
 
-def _backtracking_line_search(
+def simple_line_search(
         r_func: Callable[[np.ndarray], np.ndarray],
-        grad_f_k: np.ndarray,
         x_k: np.ndarray,
         p_k: np.ndarray,
+        alpha_init: float = 1.0,
+        rho: float = 0.5,
         c: float = 1e-4,
-        tau: float = 0.5
+        max_iter: int = 20
 ) -> float:
+    """
+    Simple backtracking line search with Armijo condition.
+
+    Args:
+        r_func: Residual function
+        x_k: Current point
+        p_k: Search direction
+        alpha_init: Initial step size
+        rho: Backtracking factor (0 < rho < 1)
+        c: Armijo constant (0 < c < 1)
+        max_iter: Maximum number of backtracking steps
+
+    Returns:
+        Step size alpha that satisfies Armijo condition
+    """
+    alpha = alpha_init
     r_k = r_func(x_k)
-    f_k = 0.5 * np.sum(r_k**2)
+    f_k = 0.5 * np.dot(r_k, r_k)
 
-    # Compute directional derivative: slope = ∇f(x_k)^T * p_k
-    slope = np.dot(grad_f_k, p_k)
+    # Compute directional derivative
+    J_k = np.outer(r_k, np.ones_like(x_k))  # Simplified - should use actual Jacobian
+    grad_f_k = J_k.T @ r_k
+    directional_derivative = np.dot(grad_f_k, p_k)
 
-    # Try more aggressive initial step size
-    alpha = 2.0
-    alpha_prev = 0.0
-    f_prev = f_k
-
-    for iteration in range(20):  # Max line search iterations
-        # Try step x_new = x_k + alpha * p_k
+    for _ in range(max_iter):
         x_new = x_k + alpha * p_k
         r_new = r_func(x_new)
-        f_new = 0.5 * np.sum(r_new**2)
+        f_new = 0.5 * np.dot(r_new, r_new)
 
         # Armijo condition
-        if f_new <= f_k + c * alpha * slope:
+        if f_new <= f_k + c * alpha * directional_derivative:
             return alpha
 
-        # Use cubic interpolation to find better alpha
-        if iteration == 0:
-            # First backtrack: use quadratic interpolation
-            alpha_new = -0.5 * slope * alpha**2 / (f_new - f_k - slope * alpha)
-        else:
-            # Subsequent backtracks: use cubic interpolation
-            # Fit cubic to f(0), f'(0), f(alpha_prev), f(alpha)
-            a = (1.0 / (alpha - alpha_prev)) * (
-                (f_new - f_k - slope * alpha) / alpha**2 -
-                (f_prev - f_k - slope * alpha_prev) / alpha_prev**2
-            )
-            b = (1.0 / (alpha - alpha_prev)) * (
-                -(f_new - f_k - slope * alpha) * alpha_prev / alpha**2 +
-                (f_prev - f_k - slope * alpha_prev) * alpha / alpha_prev**2
-            )
-
-            # Solve cubic: alpha_new = (-b + sqrt(b^2 - 3*a*slope)) / (3*a)
-            discriminant = b**2 - 3.0 * a * slope
-            if discriminant < 0 or abs(a) < 1e-10:
-                # Fall back to simple backtracking
-                alpha_new = tau * alpha
-            else:
-                alpha_new = (-b + np.sqrt(discriminant)) / (3.0 * a)
-
-        # Safeguard: ensure new alpha is reasonable
-        alpha_new = max(0.1 * alpha, min(0.5 * alpha, alpha_new))
-
-        # Update for next iteration
-        alpha_prev = alpha
-        f_prev = f_new
-        alpha = alpha_new
-
-        # Safety check: if alpha becomes too small, give up
-        if alpha < 1e-9:
-            return alpha
+        alpha *= rho
 
     return alpha
 
@@ -80,11 +59,12 @@ def good_deflated_gauss_newton(
         epsilon: float = 0.01,
         tol: float = 1e-7,
         max_iter: int = 100,
-        verbose: bool = True
+        verbose: bool = True,
+        use_line_search: bool = True
 ) -> Tuple[np.ndarray, List[np.ndarray]]:
     """Implements the 'good' deflated Gauss-Newton method (Algorithm 3.2)."""
     x_k = np.array(x0, dtype=float)
-    history = [x_k]
+    history = [x_k.copy()]
 
     if verbose:
         print(f"--- Starting search from x0 = {x_k} ---")
@@ -106,8 +86,9 @@ def good_deflated_gauss_newton(
             if verbose:
                 print(f"Iter {k}: Converged (step norm {step_norm:.2e} < {tol:.2e})")
             break
-        if k == max_iter - 1 and verbose:
-            print(f"Warning: Max iterations ({max_iter}) reached.")
+        if k == max_iter - 1:
+            if verbose:
+                print(f"Warning: Max iterations ({max_iter}) reached.")
             break
 
         grad_eta_k = grad_eta_func(x_k)
@@ -122,11 +103,14 @@ def good_deflated_gauss_newton(
                 deflated_step = True
 
         if not deflated_step:
-            grad_f_k = J_k.T @ r_k
-            alpha = _backtracking_line_search(r_func, grad_f_k, x_k, p_k)
-            x_k = x_k + alpha * p_k
+            # Use full Gauss-Newton step
+            if use_line_search:
+                alpha = simple_line_search(r_func, x_k, p_k)
+                x_k = x_k + alpha * p_k
+            else:
+                x_k = x_k + p_k
 
-        history.append(x_k)
+        history.append(x_k.copy())
         k+=1
 
     return x_k, history
@@ -281,4 +265,3 @@ if __name__ == "__main__":
     plt.show()
 
     print(f"All found solutions: {sols}")
-

@@ -18,7 +18,7 @@ def rastrigin(xy: np.ndarray, A: float = 10) -> np.ndarray:
     x, y = xy[0], xy[1]
     return A * 2 + (x**2 - A * np.cos(2 * np.pi * x)) + (y**2 - A * np.cos(2 * np.pi * y))
 
-def ackley(xy: np.ndarray) -> np.ndarray:
+def ackley(xy: np.ndarray) -> float:
     """
     Ackley function.
     Global minimum at (0, 0) with value 0.

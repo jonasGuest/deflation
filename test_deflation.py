@@ -1,6 +1,7 @@
 import good
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
 def scalar_to_residual(f):
     """Convert scalar function to residual format."""
@@ -15,85 +16,189 @@ def scalar_to_jacobian(f):
         return grad.reshape(1, -1)  # 1×n matrix
     return jacobian
 
-
-def jacobian_ackley(xy):
-    from functions import ackley
-    v = ackley(xy)
-    return good.numeric_gradient(ackley, xy)
-
 def test_ackley_func():
     from functions import ackley
     import numpy as np
 
-    _, grad_eta = good.make_deflation_funcs([])
+    # Initial guess
+    x0 = np.array([1.0, 10.3])
 
-    x0 = np.array([3.0, 10.3])
-    (minima, history) = good.good_deflated_gauss_newton(
-        scalar_to_residual(ackley),
-        scalar_to_jacobian(ackley),
-        grad_eta,
-        x0,
-        max_iter=100
-    )
+    # Storage for solutions and paths
+    solutions = []
+    paths = []
 
-    print("Found minimum at:", minima)
-    print("Function value at minimum:", ackley(minima))
+    # Number of deflation steps
+    n_deflations = 3
 
-    # Visualization
     # Create grid for plotting
     x_range = np.linspace(-5, 5, 300)
     y_range = np.linspace(-5, 5, 300)
     X, Y = np.meshgrid(x_range, y_range)
 
-    # Compute Ackley function on grid
-    Z = np.zeros_like(X)
+    # Compute base Ackley function on grid (only once)
+    Z_base = np.zeros_like(X)
     for i in range(X.shape[0]):
         for j in range(X.shape[1]):
-            Z[i, j] = ackley(np.array([X[i, j], Y[i, j]]))
+            Z_base[i, j] = ackley(np.array([X[i, j], Y[i, j]]))
 
-    # Create figure
-    fig, ax = plt.subplots(figsize=(12, 10))
+    # Create subplots: 3 rows x n_deflations columns
+    # Row 0: Base function with paths
+    # Row 1: Eta function
+    # Row 2: Deflated function
+    fig, axes = plt.subplots(3, n_deflations, figsize=(7*n_deflations, 18))
 
-    # Plot function as contour
-    contour = ax.contourf(X, Y, Z, levels=50, cmap='viridis', alpha=0.8)
-    ax.contour(X, Y, Z, levels=20, colors='white', alpha=0.3, linewidths=0.5)
-    plt.colorbar(contour, ax=ax, label='Ackley Function Value')
+    # Handle case where n_deflations == 1
+    if n_deflations == 1:
+        axes = axes.reshape(-1, 1)
 
-    # Plot optimization path
-    history_array = np.array(history)
-    ax.plot(history_array[:, 0], history_array[:, 1], 'ro-',
-            label='Optimization Path', markersize=4, linewidth=2, alpha=0.9)
+    print("=== Starting Multi-Step Deflation ===\n")
 
-    # Plot start and end points
-    ax.plot(x0[0], x0[1], 'g*', markersize=20,
-            markeredgewidth=2, markeredgecolor='white', label='Start', zorder=10)
-    ax.plot(minima[0], minima[1], 'r*', markersize=20,
-            markeredgewidth=2, markeredgecolor='white', label='Minimum Found', zorder=10)
+    for step in range(n_deflations):
+        print(f"--- Deflation Step {step + 1} ---")
 
-    # Plot true global minimum at (0, 0)
-    ax.plot(0, 0, 'w*', markersize=20,
-            markeredgewidth=2, markeredgecolor='black', label='Global Minimum', zorder=10)
+        # Create deflation functions based on known solutions
+        eta_func, grad_eta_func = good.make_deflation_funcs(solutions)
 
-    # Add iteration numbers at key points
-    step = max(1, len(history) // 10)
-    for i in range(0, len(history), step):
-        ax.annotate(f'{i}', history_array[i],
-                   textcoords="offset points", xytext=(5,5),
-                   fontsize=8, color='white', fontweight='bold')
+        # Run optimization
+        sol, path = good.good_deflated_gauss_newton(
+            scalar_to_residual(ackley),
+            scalar_to_jacobian(ackley),
+            grad_eta_func,
+            x0,
+            epsilon=0.01,
+            max_iter=100,
+            verbose=True
+        )
 
-    ax.set_xlabel('x', fontsize=12)
-    ax.set_ylabel('y', fontsize=12)
-    ax.set_title(f'Ackley Function Optimization\nIterations: {len(history)-1}, Final Value: {ackley(minima):.6f}',
-                fontsize=14, fontweight='bold')
-    ax.legend(loc='upper right', fontsize=10)
-    ax.grid(True, linestyle='--', alpha=0.3)
-    ax.set_aspect('equal')
+        print(f"Solution {step + 1}: {sol}")
+        print(f"Function value: {ackley(sol):.6e}\n")
+
+        solutions.append(sol)
+        paths.append(path)
+
+        # Compute eta and deflated function on grid
+        Z_eta = np.zeros_like(X)
+        Z_deflated = np.zeros_like(X)
+        for i in range(X.shape[0]):
+            for j in range(X.shape[1]):
+                x_point = np.array([X[i, j], Y[i, j]])
+                eta = eta_func(x_point)
+                Z_eta[i, j] = eta
+                Z_deflated[i, j] = ackley(x_point) * eta
+
+        # Row 0: Base function with all paths so far
+        ax_base = axes[0, step]
+        contour_base = ax_base.contourf(X, Y, Z_base, levels=50, cmap='viridis', alpha=0.7)
+        ax_base.contour(X, Y, Z_base, levels=20, colors='white', alpha=0.3, linewidths=0.5)
+        plt.colorbar(contour_base, ax=ax_base, label='Ackley(x)')
+
+        # Plot all paths up to current step
+        for i in range(step + 1):
+            path_array = np.array(paths[i])
+            ax_base.plot(path_array[:, 0], path_array[:, 1], 'o-',
+                        label=f"Path {i+1}", markersize=3, linewidth=2, alpha=0.8)
+
+        # Plot initial guess
+        ax_base.plot(x0[0], x0[1], 'kx', markersize=15,
+                    markeredgewidth=3, label='Start', zorder=10)
+
+        # Plot all found solutions
+        if solutions:
+            sols_array = np.array(solutions)
+            ax_base.scatter(sols_array[:, 0], sols_array[:, 1],
+                          c='red', s=200, marker='*', edgecolors='white',
+                          linewidths=2, label='Solutions', zorder=10)
+
+        # Plot global minimum
+        ax_base.plot(0, 0, 'w*', markersize=15,
+                    markeredgewidth=2, markeredgecolor='black',
+                    label='Global Min', zorder=10)
+
+        ax_base.set_title(f'Base Function + Paths (Step {step+1})',
+                         fontsize=12, fontweight='bold')
+        ax_base.set_xlabel('x', fontsize=10)
+        ax_base.set_ylabel('y', fontsize=10)
+        ax_base.set_xlim(-5, 5)
+        ax_base.set_ylim(-5, 5)
+        ax_base.grid(True, linestyle='--', alpha=0.3)
+        ax_base.set_aspect('equal')
+        ax_base.legend(loc='upper right', fontsize=8)
+
+        # Row 1: Eta function
+        ax_eta = axes[1, step]
+        # Clip eta values for better visualization
+        Z_eta_clipped = np.minimum(Z_eta, 100)
+        contour_eta = ax_eta.contourf(X, Y, Z_eta_clipped, levels=200,
+                                     cmap='plasma', alpha=0.7, norm=LogNorm())
+        ax_eta.contour(X, Y, Z_eta_clipped, levels=50, colors='white',
+                      alpha=0.3, linewidths=0.5)
+        plt.colorbar(contour_eta, ax=ax_eta, label='η(x) (log scale, clipped)')
+
+        # Plot all found solutions
+        if solutions:
+            sols_array = np.array(solutions)
+            ax_eta.scatter(sols_array[:, 0], sols_array[:, 1],
+                          c='red', s=200, marker='*', edgecolors='white',
+                          linewidths=2, label='Solutions', zorder=10)
+
+        # Plot current path
+        path_array = np.array(paths[step])
+        ax_eta.plot(path_array[:, 0], path_array[:, 1], 'wo-',
+                   markersize=3, linewidth=2, alpha=0.6, label=f'Path {step+1}')
+
+        ax_eta.set_title(f'η(x) After Solution {step+1}',
+                        fontsize=12, fontweight='bold')
+        ax_eta.set_xlabel('x', fontsize=10)
+        ax_eta.set_ylabel('y', fontsize=10)
+        ax_eta.set_xlim(-5, 5)
+        ax_eta.set_ylim(-5, 5)
+        ax_eta.grid(True, linestyle='--', alpha=0.3)
+        ax_eta.set_aspect('equal')
+        ax_eta.legend(loc='upper right', fontsize=8)
+
+        # Row 2: Deflated function
+        ax_deflated = axes[2, step]
+        contour_deflated = ax_deflated.contourf(X, Y, Z_deflated, levels=50,
+                                               cmap='coolwarm', alpha=0.7)
+        ax_deflated.contour(X, Y, Z_deflated, levels=20, colors='white',
+                           alpha=0.3, linewidths=0.5)
+        plt.colorbar(contour_deflated, ax=ax_deflated, label='Ackley(x) × η(x)')
+
+        # Plot current path
+        ax_deflated.plot(path_array[:, 0], path_array[:, 1], 'o-',
+                        label=f"Path {step+1}", markersize=4, linewidth=2.5)
+
+        # Plot initial guess
+        ax_deflated.plot(x0[0], x0[1], 'kx', markersize=15,
+                        markeredgewidth=3, label='Start', zorder=10)
+
+        # Plot all found solutions
+        if solutions:
+            sols_array = np.array(solutions)
+            ax_deflated.scatter(sols_array[:, 0], sols_array[:, 1],
+                              c='red', s=200, marker='*', edgecolors='white',
+                              linewidths=2, label='Solutions', zorder=10)
+
+        ax_deflated.set_title(f'Deflated Function (Step {step+1})',
+                             fontsize=12, fontweight='bold')
+        ax_deflated.set_xlabel('x', fontsize=10)
+        ax_deflated.set_ylabel('y', fontsize=10)
+        ax_deflated.legend(loc='best', fontsize=8)
+        ax_deflated.set_xlim(-5, 5)
+        ax_deflated.set_ylim(-5, 5)
+        ax_deflated.grid(True, linestyle='--', alpha=0.3)
+        ax_deflated.set_aspect('equal')
 
     plt.tight_layout()
-    plt.savefig('ackley_optimization.png', dpi=150, bbox_inches='tight')
-    print("\nVisualization saved to ackley_optimization.png")
+    plt.savefig('ackley_deflation_visualization.png', dpi=150, bbox_inches='tight')
+    print("Saved visualization to ackley_deflation_visualization.png")
     plt.show()
 
+    # Print summary
+    print("\n=== Summary ===")
+    print(f"Found {len(solutions)} solutions:")
+    for i, sol in enumerate(solutions):
+        print(f"  Solution {i+1}: {sol} (value: {ackley(sol):.6e})")
 
 if __name__ == "__main__":
     test_ackley_func()
