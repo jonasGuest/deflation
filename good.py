@@ -105,7 +105,7 @@ def good_deflated_gauss_newton(
 
         if not deflated_step:
             if use_line_search:
-                max_step_size = 2.0  # Limit step to reasonable size for this problem domain
+                max_step_size = 10.0  # Limit step to reasonable size for this problem domain
                 step_norm = np.linalg.norm(p_k)
 
                 if step_norm > max_step_size:
@@ -163,6 +163,38 @@ def numeric_gradient(func: Callable[[np.ndarray], float], x: np.ndarray, h: floa
         x_minus[i] -= h
         grad[i] = (func(x_plus) - func(x_minus)) / (2.0 * h)
     return grad
+
+def numeric_jacobian(
+        r_func: Callable[[np.ndarray], np.ndarray],
+        x: np.ndarray,
+        h: float = 1e-8
+) -> np.ndarray:
+    """
+    Compute the Jacobian matrix of a vector-valued function using central finite differences.
+
+    Args:
+        r_func: Residual function that takes an array and returns a vector
+        x: Point at which to evaluate the Jacobian
+        h: Step size for finite differences
+
+    Returns:
+        Jacobian matrix J where J[i,j] = ∂r_i/∂x_j
+    """
+    r0 = r_func(x)
+    m = len(r0)  # Number of residuals
+    n = len(x)   # Number of variables
+    J = np.zeros((m, n))
+
+    for j in range(n):
+        x_plus = x.copy()
+        x_minus = x.copy()
+        x_plus[j] += h
+        x_minus[j] -= h
+        r_plus = r_func(x_plus)
+        r_minus = r_func(x_minus)
+        J[:, j] = (r_plus - r_minus) / (2.0 * h)
+
+    return J
 
 def make_deflation_funcs(
         known_solutions: List[np.ndarray],

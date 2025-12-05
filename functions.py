@@ -158,3 +158,40 @@ if __name__ == "__main__":
     )
 
     fig.show()
+
+
+def acoustic_phase_residual(xy: np.ndarray, a: float = 1.0) -> np.ndarray:
+    """
+    Acoustic phase localization residual function with regularization.
+
+    This function has multiple minima due to spatial aliasing in acoustic arrays.
+    The residual includes:
+    - Phase matching terms for different harmonics k=1,2,3
+    - Regularization term penalizing distance from origin
+
+    Args:
+        xy: numpy array of shape (2,) with [x, y] coordinates
+        a: amplitude parameter (default 1.0)
+
+    Returns:
+        Residual vector of shape (7,) - 6 phase terms + 1 regularization term
+    """
+    x, y = xy[0], xy[1]
+    r_squared = x ** 2 + y ** 2
+
+    # Initialize residual vector
+    residual = np.zeros(7)
+
+    # First set of terms: a * ∏(1 - (x+y)²/(k²π²)) for k=1,2,3
+    for idx, k in enumerate([1, 2, 3]):
+        residual[idx] = a * (1 - (x + y) ** 2 / (k ** 2 * np.pi ** 2))
+
+    # Second set of terms: a * ∏(1 - (x-y)²/((k-1/2)²π²)) for k=1,2,3
+    for idx, k in enumerate([1, 2, 3]):
+        k_shifted = k - 0.5
+        residual[idx + 3] = a * (1 - (x - y) ** 2 / (k_shifted ** 2 * np.pi ** 2))
+
+    # Regularization term
+    residual[6] = a + 0.01 * r_squared
+
+    return residual

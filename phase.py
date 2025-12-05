@@ -80,7 +80,7 @@ def visualize_landscape():
 
     # Grid search to visualize the "Least Squares" cost surface
     x_range = np.linspace(-1, 2, 100)
-    y_range = np.linspace(0.1, 2, 100)  # Keep y positive (in front of array)
+    y_range = np.linspace(-0.1, 2, 100)  # Keep y positive (in front of array)
     X, Y = np.meshgrid(x_range, y_range)
     Z = np.zeros_like(X)
 
