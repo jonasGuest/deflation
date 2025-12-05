@@ -2,54 +2,55 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from typing import Callable, List, Tuple
+from line_search import backtracking_line_search_wikipedia
 import sys
 import functions
 
-def simple_line_search(
-        r_func: Callable[[np.ndarray], np.ndarray],
-        x_k: np.ndarray,
-        p_k: np.ndarray,
-        alpha_init: float = 1.0,
-        rho: float = 0.5,
-        c: float = 1e-4,
-        max_iter: int = 20
-) -> float:
-    """
-    Simple backtracking line search with Armijo condition.
-
-    Args:
-        r_func: Residual function
-        x_k: Current point
-        p_k: Search direction
-        alpha_init: Initial step size
-        rho: Backtracking factor (0 < rho < 1)
-        c: Armijo constant (0 < c < 1)
-        max_iter: Maximum number of backtracking steps
-
-    Returns:
-        Step size alpha that satisfies Armijo condition
-    """
-    alpha = alpha_init
-    r_k = r_func(x_k)
-    f_k = 0.5 * np.dot(r_k, r_k)
-
-    # Compute directional derivative
-    J_k = np.outer(r_k, np.ones_like(x_k))  # Simplified - should use actual Jacobian
-    grad_f_k = J_k.T @ r_k
-    directional_derivative = np.dot(grad_f_k, p_k)
-
-    for _ in range(max_iter):
-        x_new = x_k + alpha * p_k
-        r_new = r_func(x_new)
-        f_new = 0.5 * np.dot(r_new, r_new)
-
-        # Armijo condition
-        if f_new <= f_k + c * alpha * directional_derivative:
-            return alpha
-
-        alpha *= rho
-
-    return alpha
+# def simple_line_search(
+#         r_func: Callable[[np.ndarray], np.ndarray],
+#         x_k: np.ndarray,
+#         p_k: np.ndarray,
+#         alpha_init: float = 1.0,
+#         rho: float = 0.5,
+#         c: float = 1e-4,
+#         max_iter: int = 20
+# ) -> float:
+#     """
+#     Simple backtracking line search with Armijo condition.
+#
+#     Args:
+#         r_func: Residual function
+#         x_k: Current point
+#         p_k: Search direction
+#         alpha_init: Initial step size
+#         rho: Backtracking factor (0 < rho < 1)
+#         c: Armijo constant (0 < c < 1)
+#         max_iter: Maximum number of backtracking steps
+#
+#     Returns:
+#         Step size alpha that satisfies Armijo condition
+#     """
+#     alpha = alpha_init
+#     r_k = r_func(x_k)
+#     f_k = 0.5 * np.dot(r_k, r_k)
+#
+#     # Compute directional derivative
+#     J_k = np.outer(r_k, np.ones_like(x_k))  # Simplified - should use actual Jacobian
+#     grad_f_k = J_k.T @ r_k
+#     directional_derivative = np.dot(grad_f_k, p_k)
+#
+#     for _ in range(max_iter):
+#         x_new = x_k + alpha * p_k
+#         r_new = r_func(x_new)
+#         f_new = 0.5 * np.dot(r_new, r_new)
+#
+#         # Armijo condition
+#         if f_new <= f_k + c * alpha * directional_derivative:
+#             return alpha
+#
+#         alpha *= rho
+#
+#     return alpha
 
 def good_deflated_gauss_newton(
         r_func: Callable[[np.ndarray], np.ndarray],
@@ -103,11 +104,20 @@ def good_deflated_gauss_newton(
                 deflated_step = True
 
         if not deflated_step:
-            # Use full Gauss-Newton step
             if use_line_search:
-                alpha = simple_line_search(r_func, x_k, p_k)
+                max_step_size = 2.0  # Limit step to reasonable size for this problem domain
+                step_norm = np.linalg.norm(p_k)
+
+                if step_norm > max_step_size:
+                    p_k = p_k * (max_step_size / step_norm)
+                    if verbose:
+                        print(f"Iter {k}: Step clipped from {step_norm:.2e} to {max_step_size}, x was {x_k}")
+                pk_slope = np.dot(J_k.T@r_k, p_k)
+                scalar_r = lambda x: 0.5 * np.dot(r_func(x), r_func(x))
+                alpha = backtracking_line_search_wikipedia(scalar_r, pk_slope,  p_k, x_k)
                 x_k = x_k + alpha * p_k
             else:
+                # Use full Gauss-Newton step
                 x_k = x_k + p_k
 
         history.append(x_k.copy())
