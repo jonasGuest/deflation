@@ -2,37 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Callable, Tuple
 from phase import generate_perfect_data, phase_residual
-from good import good_deflated_gauss_newton, make_deflation_funcs, numeric_gradient
-
-
-def numerical_jacobian(
-    r_func: Callable[[np.ndarray], np.ndarray],
-    x: np.ndarray,
-    h: float = 1e-8
-) -> np.ndarray:
-    """
-    Compute the Jacobian matrix using finite differences.
-    
-    Args:
-        r_func: Residual function that returns a vector
-        x: Point at which to evaluate the Jacobian
-        h: Step size for finite differences
-    
-    Returns:
-        Jacobian matrix J where J[i,j] = ∂r_i/∂x_j
-    """
-    r0 = r_func(x)
-    m = len(r0)  # Number of residuals
-    n = len(x)   # Number of variables
-    J = np.zeros((m, n))
-    
-    for j in range(n):
-        x_plus = x.copy()
-        x_plus[j] += h
-        r_plus = r_func(x_plus)
-        J[:, j] = (r_plus - r0) / h
-    
-    return J
+from good import good, make_deflation_funcs, numeric_gradient
 
 
 def solve_acoustic_localization(
@@ -79,7 +49,7 @@ def solve_acoustic_localization(
         print(f"=== Finding Solution {i+1} ===")
         eta_func, grad_eta_func = make_deflation_funcs(solutions)
         
-        sol, path = good_deflated_gauss_newton(
+        sol, path = good(
             r_func,
             J_func,
             grad_eta_func,

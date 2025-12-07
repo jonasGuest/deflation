@@ -1,8 +1,9 @@
 import numpy as np
 from typing import Callable
 import sys
+from scipy.optimize import minimize_scalar
 
-def backtracking_line_search_wikipedia(f: Callable[[np.ndarray], float],
+def backtracking_line_search_wikipedia_old(f: Callable[[np.ndarray], float],
                                        slope_p: float,
                                        p: np.ndarray,
                                        x: np.ndarray,
@@ -18,6 +19,34 @@ def backtracking_line_search_wikipedia(f: Callable[[np.ndarray], float],
         alpha = tau * alpha
     print("No convergence backtracking line search", file=sys.stderr)
     return alpha
+
+def backtracking_line_search_wikipedia(f: Callable[[np.ndarray], float],
+                                       slope_p: float,
+                                       p: np.ndarray,
+                                       x: np.ndarray,
+                                       alpha_0: float = 1.0,
+                                       tau=0.5, c=1e-4,
+                                       max_iter: int = 100) -> float:
+    t = c*slope_p
+    alpha = alpha_0
+    fx = f(x)
+    for j in range(max_iter):
+        if (fx + alpha * t) > f(x+alpha * p):
+            return alpha
+        alpha = tau * alpha
+    print("No convergence backtracking line search", file=sys.stderr)
+    return alpha
+
+def quadratic_line_search(f: Callable[[np.ndarray], float],
+                          slope_p: float,
+                          p: np.ndarray,
+                          x: np.ndarray,
+                          alpha_0: float = 1.0,
+                          max_iter: int = 100) -> float:
+    res = minimize_scalar(lambda y: f(y * p + x), method='brent')
+    if not res.success:
+        print("No convergence in quadratic line search", file=sys.stderr)
+    return res.x
 
 
 

@@ -14,16 +14,16 @@ def generate_perfect_data():
     # Microphone Array: 5 mics in a line, spaced 20cm apart
     # NOTE: Spacing (0.2m) > Wavelength (0.17m). This creates SPATIAL ALIASING (Multiple Minima)!
     mics = np.array([
-        [0.0, 0.0, 0.0],
-        [0.2, 0.0, 0.0],
-        [0.4, 0.0, 0.0],
-        [0.6, 0.0, 0.0],
-        [0.8, 0.0, 0.0]
+        [0.0, 0.0],
+        [0.2, 0.0],
+        [0.4, 0.0],
+        [0.6, 0.0],
+        [0.8, 0.0]
     ])
 
     # True Source Location (The "Answer")
     # Placed at x=0.4 (center of array), y=1.0 (1 meter away)
-    true_source = np.array([0.4, 1.0, 0.0])
+    true_source = np.array([0.4, 1.0])
 
     # Calculate Phase Shifts relative to Mic 0
     dists = np.linalg.norm(mics - true_source, axis=1)
@@ -41,34 +41,31 @@ def phase_residual(source_pos, mics, measured_phases, wavelength):
     """
     Computes the residual vector for a single frequency sine wave.
     Input:
-        source_pos: [x, y] or [x, y, z] optimization variable
-        mics: [N, 3] known positions
+        source_pos: [x, y] or [x, y] optimization variable
+        mics: [N, 2] known positions
         measured_phases: [N] known phases (radians)
         wavelength: float
     Returns:
         residual: [2*N] vector (Cos errors and Sin errors)
     """
     # Ensure source_pos is 3D (if solver passes 2D)
-    if len(source_pos) == 2:
-        s = np.array([source_pos[0], source_pos[1], 0.0])
-    else:
-        s = source_pos
 
     # 1. Calculate Model Distance Differences (w.r.t Mic 0)
-    dists = np.linalg.norm(mics - s, axis=1)
+    dists = np.linalg.norm(mics - source_pos, axis=1)
     dist_diffs = dists - dists[0]
 
     # 2. Calculate Model Phase (Unwrapped)
     model_phases = 2 * np.pi * dist_diffs / wavelength
 
+    phase_diffs = measured_phases - measured_phases[0]
     # 3. Calculate Residuals on the Unit Circle
     # We compare the point (cos_meas, sin_meas) vs (cos_model, sin_model)
 
     # Real part error (Cos difference)
-    r_cos = np.cos(measured_phases) - np.cos(model_phases)
+    r_cos = np.cos(phase_diffs) - np.cos(model_phases)
 
     # Imag part error (Sin difference)
-    r_sin = np.sin(measured_phases) - np.sin(model_phases)
+    r_sin = np.sin(phase_diffs) - np.sin(model_phases)
 
     # Concatenate to make a vector of size 2N
     return np.concatenate([r_cos, r_sin])
@@ -79,8 +76,8 @@ def visualize_landscape():
     mics, measured_phases, wavelength, true_source = generate_perfect_data()
 
     # Grid search to visualize the "Least Squares" cost surface
-    x_range = np.linspace(-1, 2, 100)
-    y_range = np.linspace(-0.1, 2, 100)  # Keep y positive (in front of array)
+    x_range = np.linspace(-1, 2, 500)
+    y_range = np.linspace(-0.1, 2, 500)  # Keep y positive (in front of array)
     X, Y = np.meshgrid(x_range, y_range)
     Z = np.zeros_like(X)
 
@@ -90,10 +87,10 @@ def visualize_landscape():
 
     for i in range(X.shape[0]):
         for j in range(X.shape[1]):
-            guess = np.array([X[i, j], Y[i, j], 0.0])
+            guess = np.array([X[i, j], Y[i, j]])
             r = phase_residual(guess, mics, measured_phases, wavelength)
             # Cost = 0.5 * sum(r^2)
-            Z[i, j] = 0.5 * np.sum(r ** 2)
+            Z[i, j] = 0.5 * np.dot(r,r)
 
     plt.figure(figsize=(10, 8))
     # Log scale to see the minima better

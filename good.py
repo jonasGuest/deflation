@@ -1,87 +1,29 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy
 from matplotlib.colors import LogNorm
 from typing import Callable, List, Tuple
-from line_search import backtracking_line_search_wikipedia
+from line_search import backtracking_line_search_wikipedia, quadratic_line_search
 import sys
 import functions
 
-# def simple_line_search(
-#         r_func: Callable[[np.ndarray], np.ndarray],
-#         x_k: np.ndarray,
-#         p_k: np.ndarray,
-#         alpha_init: float = 1.0,
-#         rho: float = 0.5,
-#         c: float = 1e-4,
-#         max_iter: int = 20
-# ) -> float:
-#     """
-#     Simple backtracking line search with Armijo condition.
-#
-#     Args:
-#         r_func: Residual function
-#         x_k: Current point
-#         p_k: Search direction
-#         alpha_init: Initial step size
-#         rho: Backtracking factor (0 < rho < 1)
-#         c: Armijo constant (0 < c < 1)
-#         max_iter: Maximum number of backtracking steps
-#
-#     Returns:
-#         Step size alpha that satisfies Armijo condition
-#     """
-#     alpha = alpha_init
-#     r_k = r_func(x_k)
-#     f_k = 0.5 * np.dot(r_k, r_k)
-#
-#     # Compute directional derivative
-#     J_k = np.outer(r_k, np.ones_like(x_k))  # Simplified - should use actual Jacobian
-#     grad_f_k = J_k.T @ r_k
-#     directional_derivative = np.dot(grad_f_k, p_k)
-#
-#     for _ in range(max_iter):
-#         x_new = x_k + alpha * p_k
-#         r_new = r_func(x_new)
-#         f_new = 0.5 * np.dot(r_new, r_new)
-#
-#         # Armijo condition
-#         if f_new <= f_k + c * alpha * directional_derivative:
-#             return alpha
-#
-#         alpha *= rho
-#
-#     return alpha
-
-def good_deflated_gauss_newton(
+def good(
         r_func: Callable[[np.ndarray], np.ndarray],
         J_func: Callable[[np.ndarray], np.ndarray],
         grad_eta_func: Callable[[np.ndarray], np.ndarray],
         x0: np.ndarray,
         epsilon: float = 0.01,
-        tol: float = 1e-7,
-        max_iter: int = 100,
+        tol: float = 1e-3,
+        max_iter: int = 1000,
         verbose: bool = True,
-        use_line_search: bool = True
+        limit_step: float = 1,
 ) -> Tuple[np.ndarray, List[np.ndarray]]:
-    """Implements the 'good' deflated Gauss-Newton method (Algorithm 3.2)."""
     x_k = np.array(x0, dtype=float)
     history = [x_k.copy()]
-
-    if verbose:
-        print(f"--- Starting search from x0 = {x_k} ---")
-
-    k=0
-    while True:
+    for k in range(max_iter):
         r_k = r_func(x_k)
         J_k = J_func(x_k)
-
-        try:
-            p_k, _, _, _ = np.linalg.lstsq(J_k, -r_k, rcond=None)
-        except np.linalg.LinAlgError as e:
-            if verbose:
-                print(f"Iter {k}: Singular matrix. Stopping. Error: {e}", file=sys.stderr)
-            break
-
+        p_k, _, _, _ = scipy.linalg.lstsq(J_k, -r_k, cond=None)
         step_norm = np.linalg.norm(p_k)
         if step_norm < tol:
             if verbose:
@@ -90,38 +32,28 @@ def good_deflated_gauss_newton(
         if k == max_iter - 1:
             if verbose:
                 print(f"Warning: Max iterations ({max_iter}) reached.")
-            break
 
         grad_eta_k = grad_eta_func(x_k)
         inner_prod = np.dot(p_k, grad_eta_k)
 
-        deflated_step = False
         if inner_prod > epsilon:
             beta = 1.0 - inner_prod
-            if np.abs(beta) > 1e-6:
-                step = (1.0 / beta) * p_k
-                x_k = x_k + step
-                deflated_step = True
+            x_k = x_k + p_k / beta
+        else:
+            step_norm = np.linalg.norm(p_k)
+            p_k = np.minimum(limit_step / step_norm, 1.0) * p_k
 
-        if not deflated_step:
-            if use_line_search:
-                max_step_size = 10.0  # Limit step to reasonable size for this problem domain
-                step_norm = np.linalg.norm(p_k)
-
-                if step_norm > max_step_size:
-                    p_k = p_k * (max_step_size / step_norm)
-                    if verbose:
-                        print(f"Iter {k}: Step clipped from {step_norm:.2e} to {max_step_size}, x was {x_k}")
-                pk_slope = np.dot(J_k.T@r_k, p_k)
-                scalar_r = lambda x: 0.5 * np.dot(r_func(x), r_func(x))
-                alpha = backtracking_line_search_wikipedia(scalar_r, pk_slope,  p_k, x_k)
-                x_k = x_k + alpha * p_k
-            else:
-                # Use full Gauss-Newton step
-                x_k = x_k + p_k
+            # if step_norm > max_step_size:
+            #     p_k = p_k * (max_step_size / step_norm)
+            #     if verbose:
+            #         print(f"Iter {k}: Step clipped from {step_norm:.2e} to {max_step_size}, x was {x_k}")
+            pk_slope = np.dot(J_k.T@r_k, p_k)
+            scalar_r = lambda x: 0.5 * np.dot(r_func(x), r_func(x))
+            # alpha = backtracking_line_search_wikipedia(scalar_r, pk_slope,  p_k, x_k)
+            alpha = quadratic_line_search(scalar_r, pk_slope,  p_k, x_k)
+            x_k = x_k + alpha * p_k
 
         history.append(x_k.copy())
-        k+=1
 
     return x_k, history
 
@@ -235,7 +167,7 @@ if __name__ == "__main__":
 
     for i in range(4):
         eta_func, grad_eta_func = make_deflation_funcs(sols)
-        sol, path = good_deflated_gauss_newton(residual_func, jacobian_func, grad_eta_func, x0, epsilon=0.01)
+        sol, path = good(residual_func, jacobian_func, grad_eta_func, x0, epsilon=0.01)
         print("sol: ", sol)
         paths.append(path)
         sols.append(sol)
