@@ -10,6 +10,8 @@ def numerical_jacobian_func(
     def l( x: np.ndarray):
         return numerical_jacobian(r_func, x, h)
     return l
+
+# two sided numerical jacobian
 def numerical_jacobian(
         r_func: Callable[[np.ndarray], np.ndarray],
         x: np.ndarray,
@@ -33,8 +35,11 @@ def numerical_jacobian(
 
     for j in range(n):
         x_plus = x.copy()
+        x_minus = x.copy()
         x_plus[j] += h
+        x_minus[j] -= h
         r_plus = r_func(x_plus)
-        J[:, j] = (r_plus - r0) / h
+        r_minus = r_func(x_minus)
+        J[:, j] = (r_plus - r_minus) / (2.0 * h)
 
     return J

@@ -14,7 +14,7 @@ def good(
         x0: np.ndarray,
         epsilon: float = 0.01,
         tol: float = 1e-3,
-        max_iter: int = 1000,
+        max_iter: int = 100,
         verbose: bool = True,
         limit_step: float = 1,
 ) -> Tuple[np.ndarray, List[np.ndarray]]:
@@ -23,7 +23,12 @@ def good(
     for k in range(max_iter):
         r_k = r_func(x_k)
         J_k = J_func(x_k)
-        p_k, _, _, _ = scipy.linalg.lstsq(J_k, -r_k, cond=None)
+        p_k, _, _, condition_numbers = scipy.linalg.lstsq(J_k, -r_k)
+        condition_number = condition_numbers[0]/condition_numbers[-1]
+        if condition_number > 1e6:
+            p_k = np.zeros_like(p_k)
+            p_k[0] = 1
+
         step_norm = np.linalg.norm(p_k)
         if step_norm < tol:
             if verbose:
@@ -37,10 +42,11 @@ def good(
         inner_prod = np.dot(p_k, grad_eta_k)
 
         if inner_prod > epsilon:
+            # print("deflated step")
             beta = 1.0 - inner_prod
             x_k = x_k + p_k / beta
         else:
-            step_norm = np.linalg.norm(p_k)
+            # print(step_norm)
             p_k = np.minimum(limit_step / step_norm, 1.0) * p_k
 
             # if step_norm > max_step_size:
@@ -51,6 +57,7 @@ def good(
             scalar_r = lambda x: 0.5 * np.dot(r_func(x), r_func(x))
             # alpha = backtracking_line_search_wikipedia(scalar_r, pk_slope,  p_k, x_k)
             alpha = quadratic_line_search(scalar_r, pk_slope,  p_k, x_k)
+            # alpha = 1.0
             x_k = x_k + alpha * p_k
 
         history.append(x_k.copy())

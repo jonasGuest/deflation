@@ -1,8 +1,9 @@
-from typing import Callable
+from typing import List, Callable
 
 import numpy as np
 import pyray
-from utils import numerical_jacobian, numerical_jacobian_func
+from utils import numerical_jacobian
+from good import good, make_deflation_funcs
 import time
 
 
@@ -15,31 +16,41 @@ def robotic_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarray) -> 
 
     return tip
 
+
 def residuals(origin: np.ndarray, lengths: np.ndarray, target: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
-    def l(angles: np.ndarray):
-        return robotic_arm(origin, lengths, angles) - target
-    return l
+    def residuals(angles: np.ndarray) -> np.ndarray:
+        end_effector_pos = robotic_arm(origin, lengths, angles)
+        r = np.zeros(3)
+        r[0:2] = end_effector_pos - target
+        r[2] = angles[0] + angles[1] + angles[2]  # simple constraint to avoid singularity
+        return r
 
-def find_minimum_of_residuals(origin: np.ndarray, lengths: np.ndarray, initial_angles: np.ndarray, target: np.ndarray) -> np.ndarray:
-    from good import good, make_deflation_funcs
-    _, grad_eta = make_deflation_funcs([])
+    return residuals
+
+def find_minimum_of_residuals(origin: np.ndarray, lengths: np.ndarray, initial_angles: np.ndarray,
+                              target: np.ndarray) -> List[np.ndarray]:
+    sols = []
     residuals_func = residuals(origin, lengths, target)
-    angles, _ = good(residuals_func,
-                  numerical_jacobian_func(residuals_func),
-                  grad_eta,
-                  initial_angles
-                  )
-    return angles
+    for i in range(3):
+        _, grad_eta = make_deflation_funcs(sols)
+        angles, path = good(residuals_func,
+                            lambda y: numerical_jacobian(residuals_func, y),
+                            grad_eta,
+                            initial_angles
+                            )
+        sols.append(angles)
+    return [sol % (2*np.pi) for sol in sols]
 
-def lerp(a: float, b: float, t: float) -> float:
-    return a + (b - a) * t
+def choose_minimum_solution(origin: np.ndarray, lengths: np.ndarray, target: np.ndarray, solutions: List[np.ndarray]) -> np.ndarray:
+    best_solution = solutions[0]
+    residual_func = residuals(origin, lengths, target)
+    for sol in solutions[1:]:
+        if np.dot(residual_func(sol), residual_func(sol)) < np.dot(residual_func(best_solution), residual_func(best_solution)):
+            best_solution = sol
+    return best_solution
 
 def lerp_angles(current: np.ndarray, target: np.ndarray, t: float) -> np.ndarray:
-    return np.array([
-        lerp(current[0], target[0], t),
-        lerp(current[1], target[1], t)
-    ])
-
+    return current * (1-t) + target * t
 
 def render_double_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarray):
     joints = [origin]
@@ -55,27 +66,27 @@ def render_double_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarra
         pyray.draw_line_ex(start.tolist(), end.tolist(), 4.5, pyray.DARKGRAY)
         pyray.draw_circle(int(start[0]), int(start[1]), 10, pyray.BLACK)
 
+
 if __name__ == "__main__":
     # Example usage
-    lengths = np.array([50.0, 100.0])
+    lengths = np.array([50.0, 100.0, 75.0])
 
     pyray.init_window(800, 450, "Demo - Python Raylib")
     pyray.set_target_fps(60)
 
-    initial_anchor = np.array([400.0, 225.0])
-
     target = np.array([500.0, 300.0])
 
-    angles = np.array([0.0, 0.0])
-    origin = np.array([400, 200])
-
+    angles = np.array([0.0, 0.0, 0.0])
+    origin = np.array([400.0, 200.0])
 
     # Initial Solve
-    target_angles = find_minimum_of_residuals(origin, lengths, angles, target)
-    print(f"Optimized angles: {target_angles}")
+    multiple_solutions = find_minimum_of_residuals(origin, lengths, angles, target)
+    print(f"Optimized angles: {multiple_solutions}")
 
     animation_duration = 0.4  # seconds (converted from 400.0ms)
     animation_start = time.time()
+
+    target_angles = choose_minimum_solution(origin, lengths, target, multiple_solutions)
 
     while not pyray.window_should_close():
 
@@ -90,7 +101,8 @@ if __name__ == "__main__":
             animation_percent = min(elapsed / animation_duration, 1.0)
             angles = lerp_angles(angles, target_angles, animation_percent)
 
-            target_angles = find_minimum_of_residuals(origin, lengths, angles, target)
+            multiple_solutions = find_minimum_of_residuals(origin, lengths, angles, target)
+            target_angles = choose_minimum_solution(origin, lengths, target, multiple_solutions)
 
             print(f"New target: ({target[0]}, {target[1]})")
             print(f"Optimized angles: {target_angles}")
@@ -118,10 +130,13 @@ if __name__ == "__main__":
         pyray.draw_text("Click to move target", 190, 200, 20, pyray.VIOLET)
         pyray.draw_fps(20, 20)
 
+        for solution in multiple_solutions:
+            tip = robotic_arm(origin, lengths, solution)
+            pyray.draw_circle(int(tip[0]), int(tip[1]), 5, pyray.RED)
+
         pyray.end_drawing()
 
     pyray.close_window()
-
 
 if __name__ == "__main__":
     main()

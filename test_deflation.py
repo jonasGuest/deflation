@@ -254,5 +254,5 @@ def find_minimas_with_scipy():
 
 if __name__ == "__main__":
     # test_ackley_func()
-    # deflation_on_test_problem_with_many_local_minima()
-    find_minimas_with_scipy()
+    deflation_on_test_problem_with_many_local_minima()
+    # find_minimas_with_scipy()
