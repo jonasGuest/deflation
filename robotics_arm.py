@@ -51,20 +51,19 @@ def simple_gauss_newton(residuals: Callable[[np.ndarray], np.ndarray], jacobian:
 
 
 def find_minimum_of_residuals(origin: np.ndarray, lengths: np.ndarray, initial_angles: np.ndarray,
-                              target: np.ndarray) -> np.ndarray:
-    # sols = []
+                              target: np.ndarray) -> List[np.ndarray]:
+    sols = []
     residuals_func = residuals(origin, lengths, target)
     jacobian_func = lambda x: numerical_jacobian(residuals_func, x)
-    return simple_gauss_newton(residuals_func, jacobian_func, initial_angles)
-    # for i in range(3):
-    #     _, grad_eta = make_deflation_funcs(sols)
-    #     angles, path = good(residuals_func,
-    #                         lambda y: numerical_jacobian(residuals_func, y),
-    #                         grad_eta,
-    #                         initial_angles
-    #                         )
-    #     sols.append(angles)
-    # return [sol % (2 * np.pi) for sol in sols]
+    for i in range(3):
+        _, grad_eta = make_deflation_funcs(sols)
+        angles, path = good(residuals_func,
+                            lambda y: numerical_jacobian(residuals_func, y),
+                            grad_eta,
+                            initial_angles
+                            )
+        sols.append(angles)
+    return [sol % (2 * np.pi) for sol in sols]
 
 
 
@@ -111,7 +110,8 @@ if __name__ == "__main__":
     origin = np.array([400.0, 200.0])
 
     # Initial Solve
-    target_angles = find_minimum_of_residuals(origin, lengths, angles, target)
+    multiple_solutions = find_minimum_of_residuals(origin, lengths, angles, target)
+    target_angles = choose_minimum_solution(origin, lengths, target, multiple_solutions)
 
     animation_duration = 0.4  # seconds (converted from 400.0ms)
     animation_start = time.time()
@@ -131,8 +131,8 @@ if __name__ == "__main__":
             animation_percent = min(elapsed / animation_duration, 1.0)
             angles = lerp_angles(angles, target_angles, animation_percent)
 
-            target_angles = find_minimum_of_residuals(origin, lengths, angles, target)
-            # target_angles = choose_minimum_solution(origin, lengths, target, multiple_solutions)
+            multiple_solutions = find_minimum_of_residuals(origin, lengths, angles, target)
+            target_angles = choose_minimum_solution(origin, lengths, target, multiple_solutions)
 
             print(f"New target: ({target[0]}, {target[1]})")
             print(f"Optimized angles: {target_angles}")
