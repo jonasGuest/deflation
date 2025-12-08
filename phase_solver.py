@@ -141,7 +141,6 @@ def visualize_solutions(
     ax.set_aspect('equal')
     
     plt.tight_layout()
-    plt.savefig('acoustic_localization_results.png', dpi=150)
     print("Visualization saved to 'acoustic_localization_results.png'")
     plt.show()
 
