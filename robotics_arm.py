@@ -23,7 +23,13 @@ def robotic_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarray) -> 
 def residuals(origin: np.ndarray, lengths: np.ndarray, target: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
     def residuals(angles: np.ndarray) -> np.ndarray:
         end_effector_pos = robotic_arm(origin, lengths, angles)
-        return end_effector_pos - target
+        residual_value = np.zeros(2)
+        # prefer small angles
+        residual_value[0:2] = end_effector_pos - target
+        # This is very sensitive when trying to encode additional things into the residuals the accuracy suffers hugely
+        # residual_value[2] = end
+        # residual_value[3] = 0
+        return residual_value
 
     return residuals
 
@@ -57,11 +63,7 @@ def find_minimum_of_residuals(origin: np.ndarray, lengths: np.ndarray, initial_a
     jacobian_func = lambda x: numerical_jacobian(residuals_func, x)
     for i in range(3):
         _, grad_eta = make_deflation_funcs(sols)
-        angles, path = good(residuals_func,
-                            lambda y: numerical_jacobian(residuals_func, y),
-                            grad_eta,
-                            initial_angles
-                            )
+        angles, path = good(residuals_func, jacobian_func, grad_eta, initial_angles)
         sols.append(angles)
     return [sol % (2 * np.pi) for sol in sols]
 
@@ -99,14 +101,14 @@ def render_double_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarra
 
 if __name__ == "__main__":
     # Example usage
-    lengths = np.array([50.0, 100.0, 75.0])
+    lengths = np.array([50.0, 100.0, 75.0, 30, 20])
 
     pyray.init_window(800, 450, "Demo - Python Raylib")
     pyray.set_target_fps(60)
 
     target = np.array([500.0, 300.0])
 
-    angles = np.array([0.0, 0.0, 0.0])
+    angles = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
     origin = np.array([400.0, 200.0])
 
     # Initial Solve
@@ -115,8 +117,6 @@ if __name__ == "__main__":
 
     animation_duration = 0.4  # seconds (converted from 400.0ms)
     animation_start = time.time()
-
-    # target_angles = choose_minimum_solution(origin, lengths, target, multiple_solutions)
 
     while not pyray.window_should_close():
 
@@ -160,9 +160,9 @@ if __name__ == "__main__":
         pyray.draw_text("Click to move target", 190, 200, 20, pyray.VIOLET)
         pyray.draw_fps(20, 20)
 
-        # for solution in multiple_solutions:
-        #     tip = robotic_arm(origin, lengths, solution)
-        #     pyray.draw_circle(int(tip[0]), int(tip[1]), 5, pyray.RED)
+        for solution in multiple_solutions:
+            tip = robotic_arm(origin, lengths, solution)
+            pyray.draw_circle(int(tip[0]), int(tip[1]), 5, pyray.RED)
 
         pyray.end_drawing()
 

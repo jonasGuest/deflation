@@ -146,7 +146,6 @@ def make_deflation_funcs(
             eta *= 1.0+1.0/np.abs(np.dot(diff, diff))
         return eta
 
-
     def grad_eta(x: np.ndarray) -> np.ndarray:
         """Gradient of eta computed numerically."""
         return numeric_gradient(lambda y: np.log(mu(y)), x)
