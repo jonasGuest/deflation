@@ -12,6 +12,7 @@ import time
 PYRAY_SECONDARY_COLORS=[
     pyray.GREEN, pyray.YELLOW, pyray.PURPLE
 ]
+SHOW_SECONDARY_SOLUTIONS = True
 
 def robotic_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarray) -> np.ndarray:
     """ Calculate the (x, y) position of the end effector of a 2D robotic arm. """
@@ -87,7 +88,7 @@ def lerp_angles(current: np.ndarray, target: np.ndarray, t: float) -> np.ndarray
     return current * (1 - t) + target * t
 
 
-def render_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarray, color: tuple=pyray.BLACK, opacity:float = 1):
+def render_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarray, color: pyray.Color=pyray.BLACK, opacity:float = 1):
     joints = [origin]
     for i in range(np.shape(angles)[0]):
         joints.append(joints[-1] + np.array([
@@ -152,7 +153,7 @@ if __name__ == "__main__":
         # Rendering
         pyray.begin_drawing()
         pyray.clear_background(pyray.RAYWHITE)
-        pyray.draw_circle_v(target.tolist(), 20, pyray.GREEN)
+        pyray.draw_circle_v(target.tolist(), 3, pyray.GREEN)
 
         # Draw Arm
         render_arm(origin, lengths, draw_angles)
@@ -164,8 +165,8 @@ if __name__ == "__main__":
 
         for i,solution in enumerate(multiple_solutions):
             tip = robotic_arm(origin, lengths, solution)
-            pyray.draw_circle(int(tip[0]), int(tip[1]), 5, pyray.RED)
-            render_arm(origin, lengths, solution, color=PYRAY_SECONDARY_COLORS[i], opacity=0.2)
+            if SHOW_SECONDARY_SOLUTIONS:
+                render_arm(origin, lengths, solution, color=PYRAY_SECONDARY_COLORS[i], opacity=0.2)
 
         pyray.end_drawing()
 
