@@ -9,6 +9,9 @@ from utils import numerical_jacobian
 from good import good, make_deflation_funcs
 import time
 
+PYRAY_SECONDARY_COLORS=[
+    pyray.GREEN, pyray.YELLOW, pyray.PURPLE
+]
 
 def robotic_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarray) -> np.ndarray:
     """ Calculate the (x, y) position of the end effector of a 2D robotic arm. """
@@ -84,7 +87,7 @@ def lerp_angles(current: np.ndarray, target: np.ndarray, t: float) -> np.ndarray
     return current * (1 - t) + target * t
 
 
-def render_double_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarray):
+def render_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarray, color: tuple=pyray.BLACK, opacity:float = 1):
     joints = [origin]
     for i in range(np.shape(angles)[0]):
         joints.append(joints[-1] + np.array([
@@ -95,8 +98,8 @@ def render_double_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarra
     for i in range(len(joints) - 1):
         start = joints[i]
         end = joints[i + 1]
-        pyray.draw_line_ex(start.tolist(), end.tolist(), 4.5, pyray.DARKGRAY)
-        pyray.draw_circle(int(start[0]), int(start[1]), 10, pyray.BLACK)
+        pyray.draw_line_ex(start.tolist(), end.tolist(), 4.5, pyray.fade(color, opacity))
+        pyray.draw_circle(int(start[0]), int(start[1]), 10, pyray.fade(color, opacity))
 
 
 if __name__ == "__main__":
@@ -113,6 +116,7 @@ if __name__ == "__main__":
 
     # Initial Solve
     multiple_solutions = find_minimum_of_residuals(origin, lengths, angles, target)
+    print(multiple_solutions)
     target_angles = choose_minimum_solution(origin, lengths, target, multiple_solutions)
 
     animation_duration = 0.4  # seconds (converted from 400.0ms)
@@ -148,21 +152,20 @@ if __name__ == "__main__":
         # Rendering
         pyray.begin_drawing()
         pyray.clear_background(pyray.RAYWHITE)
-
-        # Draw Target
         pyray.draw_circle_v(target.tolist(), 20, pyray.GREEN)
 
         # Draw Arm
-        render_double_arm(origin, lengths, draw_angles)
+        render_arm(origin, lengths, draw_angles)
 
         # Draw UI
         pyray.draw_grid(20, 1.0)
         pyray.draw_text("Click to move target", 190, 200, 20, pyray.VIOLET)
         pyray.draw_fps(20, 20)
 
-        for solution in multiple_solutions:
+        for i,solution in enumerate(multiple_solutions):
             tip = robotic_arm(origin, lengths, solution)
             pyray.draw_circle(int(tip[0]), int(tip[1]), 5, pyray.RED)
+            render_arm(origin, lengths, solution, color=PYRAY_SECONDARY_COLORS[i], opacity=0.2)
 
         pyray.end_drawing()
 
