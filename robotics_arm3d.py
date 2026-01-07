@@ -4,59 +4,17 @@ import numpy as np
 import numpy.linalg
 import pyray
 import time
-
-# --- Optimization Engine ---
-
-def levenberg_marquardt(f, J_f, x0, lamb=1e-2, multiplier=2.0, max_iter=10, tol=1e-4):
-    """
-    Levenberg-Marquardt optimization to minimize ||f(x)||^2.
-    """
-    x = np.array(x0, dtype=float)
-    n_params = len(x)
-
-    residuals = f(x)
-    J = J_f(x)
-    current_error = 0.5 * np.sum(residuals ** 2)
-
-    for i in range(max_iter):
-        JT = J.T
-        H_approx = JT @ J
-        gradient = JT @ residuals
-
-        A = H_approx + lamb * np.eye(n_params)
-        b = -gradient
-
-        try:
-            delta = np.linalg.solve(A, b)
-        except np.linalg.LinAlgError:
-            lamb *= multiplier
-            continue
-
-        x_new = x + delta
-        residuals_new = f(x_new)
-        new_error = 0.5 * np.sum(residuals_new ** 2)
-
-        if new_error < current_error:
-            x = x_new
-            lamb /= multiplier
-            if np.linalg.norm(delta) < tol:
-                break
-            current_error = new_error
-            residuals = residuals_new
-            J = J_f(x)
-        else:
-            lamb *= multiplier
-
-    return x
-
+from good import make_deflation_funcs, good
 
 class Arm:
-    def __init__(self, angles: np.ndarray, lengths: np.ndarray):
+    def __init__(self, angles: np.ndarray, lengths: np.ndarray, rotation_axis: List[np.ndarray]):
         assert angles.shape == lengths.shape
+        assert len(rotation_axis) == angles.shape[0]
         self.angles = angles
         self.lengths = lengths
+        self.rotation_axis = rotation_axis
     def with_angles(self, angles: np.ndarray):
-        return Arm(angles, self.lengths)
+        return Arm(angles, self.lengths, self.rotation_axis)
     def n(self):
         return self.angles.shape[0]
 
@@ -67,9 +25,9 @@ z_axis = np.array([0.0, 0.0, 1.0])
 def rot(axis: np.ndarray, angle: float) -> np.ndarray:
     # https://en.wikipedia.org/wiki/Rodrigues'_rotation_formula#Matrix_notation
     K = np.array([
-        [0, -axis[2], axis[1]],
-        [axis[2], 0, -axis[0]],
-        [-axis[1], axis[0], 0]
+        [0.0, -axis[2], axis[1]],
+        [axis[2], 0.0, -axis[0]],
+        [-axis[1], axis[0], 0.0]
     ])
     return np.eye(3, 3) + np.sin(angle) * K + (1-np.cos(angle))* K@K
 
@@ -93,6 +51,8 @@ def s_i(arm: Arm, i: int) -> np.ndarray:
 
     return tip
 
+
+# pyray ----------------------
 def np_to_pyray(vec: np.ndarray) -> pyray.Vector3:
     return pyray.Vector3(vec[0], vec[1], vec[2])
 
@@ -131,34 +91,30 @@ def arm_3d():
     # Arm Setup
     arm_angles = np.array([0.5, 0.5, 0.5])
     arm_lengths = np.array([3.0, 2.0, 2.0])
+    arm_rotation_axis = [z_axis, z_axis, z_axis]
 
-    # Define axes: Y-axis (base rotation), Z-axis (shoulder), Z-axis (elbow)
-    # This configuration allows full 3D reach.
+    arm = Arm(arm_angles, arm_lengths, arm_rotation_axis)
 
-    arm = Arm(arm_angles, arm_lengths)
+    target_pos = np.array([-3.0, 1.0, 0.0])
 
-    target_pos = np.array([-3.0, -1.0, 0.0])
+    def residuals_func(x):
+        return s_i(arm.with_angles(x), arm.n()) - target_pos
+
+    def jacobian_func(x):
+        return jacobian(arm.with_angles(x))
+
+    mu, grad_eta = make_deflation_funcs([])
+    new_angles, path = good(
+        r_func=residuals_func,
+        J_func=jacobian_func,
+        grad_eta_func=grad_eta,
+        x0=arm.angles
+    )
+    arm.angles = new_angles
 
     while not pyray.window_should_close():
         # --- Update ---
-        pyray.update_camera(camera, pyray.CameraMode.CAMERA_ORBITAL)
-
-        # 2. Inverse Kinematics Step
-        def residuals_func(x):
-            return s_i(arm.with_angles(x), arm.n()) - target_pos
-
-        def jacobian_func(x):
-            return jacobian(arm.with_angles(x))
-
-        new_angles = levenberg_marquardt(
-            f=residuals_func,
-            J_f=jacobian_func,
-            x0=arm.angles,
-            lamb=1e-2,
-            max_iter=5,
-            tol=1e-3
-        )
-        arm.angles = new_angles
+        # pyray.update_camera(camera, pyray.CameraMode.CAMERA_ORBITAL)
 
         # --- 3. Draw ---
         pyray.begin_drawing()
@@ -167,6 +123,36 @@ def arm_3d():
 
         pyray.draw_grid(20, 1.0)
         pyray.draw_sphere(np_to_pyray(target_pos), 0.3, pyray.GREEN)
+
+        # --- Mouse Interaction ---
+        if pyray.is_mouse_button_down(pyray.MouseButton.MOUSE_BUTTON_LEFT):
+            ray = pyray.get_screen_to_world_ray(pyray.get_mouse_position(), camera)
+
+            if abs(ray.direction.z) > 1e-6:
+                t = -ray.position.z / ray.direction.z
+
+                # Check if the intersection is in front of the camera
+                if t > 0:
+                    hit_x = ray.position.x + ray.direction.x * t
+                    hit_y = ray.position.y + ray.direction.y * t
+
+                    target_pos = np.array([hit_x, hit_y, 0.0])
+
+                    # 3. Re-run IK
+                    # We redefine the residual function to use the NEW target_pos
+                    def residuals_func_dynamic(x):
+                        return s_i(arm.with_angles(x), arm.n()) - target_pos
+
+                    new_angles, _ = good(
+                        r_func=residuals_func_dynamic,
+                        J_func=jacobian_func,
+                        grad_eta_func=grad_eta,
+                        x0=arm.angles,
+                        verbose=False,
+                        max_iter=50
+                    )
+                    arm.angles = new_angles
+
         draw_arm(arm)
 
         pyray.end_mode_3d()

@@ -4,8 +4,6 @@ import scipy
 from matplotlib.colors import LogNorm
 from typing import Callable, List, Tuple
 from line_search import backtracking_line_search_wikipedia, quadratic_line_search
-import sys
-import functions
 
 def good(
         r_func: Callable[[np.ndarray], np.ndarray],
@@ -23,11 +21,13 @@ def good(
     for k in range(max_iter):
         r_k = r_func(x_k)
         J_k = J_func(x_k)
-        p_k, _, _, condition_numbers = scipy.linalg.lstsq(J_k, -r_k)
+        # p_k, _, _, condition_numbers = scipy.linalg.lstsq(J_k, -r_k)
+        l = 1.0
+        p_k, _, _, condition_numbers = scipy.linalg.lstsq(J_k.T @ J_k + np.eye(J_k.shape[1], J_k.shape[1]) * l, -J_k.T @ r_k)
         condition_number = condition_numbers[0]/condition_numbers[-1]
         if condition_number > 1e6:
             p_k = np.zeros_like(p_k)
-            p_k[0] = 1
+            p_k[0] = 0.1
 
         step_norm = np.linalg.norm(p_k)
         if step_norm < tol:
