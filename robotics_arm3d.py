@@ -56,9 +56,13 @@ def s_i(arm: Arm, i: int) -> np.ndarray:
 def np_to_pyray(vec: np.ndarray) -> pyray.Vector3:
     return pyray.Vector3(vec[0], vec[1], vec[2])
 
-def draw_arm(arm: Arm):
-    joint_color = pyray.MAROON
-    segment_color = pyray.DARKGRAY
+def draw_arm(arm: Arm, is_primary: bool = True):
+    # if is_primary:
+    #     joint_color = pyray.MAROON
+    #     segment_color = pyray.DARKGRAY
+    # else:
+    joint_color = pyray.Color(255, 255, 0, 100)
+    segment_color = pyray.Color(255, 255, 0, 100)
     segment_radius = 0.1
     joint_radius = 0.2
 
@@ -71,8 +75,8 @@ def draw_arm(arm: Arm):
         pyray.draw_cylinder_ex(current_pos, next_pos, segment_radius, segment_radius, 16, segment_color)
 
     # Draw end effector tip
-    pyray.draw_sphere(np_to_pyray(s_i(arm, arm.n())), joint_radius * 0.8, pyray.GOLD)
-
+    if is_primary:
+        pyray.draw_sphere(np_to_pyray(s_i(arm, arm.n())), joint_radius * 0.8, pyray.GOLD)
 
 # -------------------------
 
@@ -112,6 +116,8 @@ def arm_3d():
     )
     arm.angles = new_angles
 
+    solutions = [arm.angles]
+
     while not pyray.window_should_close():
         # --- Update ---
         # pyray.update_camera(camera, pyray.CameraMode.CAMERA_ORBITAL)
@@ -140,20 +146,13 @@ def arm_3d():
 
                     # 3. Re-run IK
                     # We redefine the residual function to use the NEW target_pos
-                    def residuals_func_dynamic(x):
-                        return s_i(arm.with_angles(x), arm.n()) - target_pos
+                    solutions = find_multiple_solutions(arm, jacobian_func, target_pos)
+                    arm.angles = solutions[0]
 
-                    new_angles, _ = good(
-                        r_func=residuals_func_dynamic,
-                        J_func=jacobian_func,
-                        grad_eta_func=grad_eta,
-                        x0=arm.angles,
-                        verbose=False,
-                        max_iter=50
-                    )
-                    arm.angles = new_angles
-
-        draw_arm(arm)
+        for i,solution in enumerate(solutions):
+            print(i, solution)
+            other_arm = arm.with_angles(solution)
+            draw_arm(other_arm, i==0)
 
         pyray.end_mode_3d()
 
@@ -165,6 +164,26 @@ def arm_3d():
         pyray.end_drawing()
 
     pyray.close_window()
+
+
+def find_multiple_solutions(arm: Arm, jacobian_func: Callable[[np.ndarray], np.ndarray], target_pos: np.ndarray):
+    def residuals_func_dynamic(x):
+        return s_i(arm.with_angles(x), arm.n()) - target_pos
+
+    solutions = []
+    for i in range(3):
+        _, grad_eta = make_deflation_funcs(solutions)
+        new_angles, _ = good(
+            r_func=residuals_func_dynamic,
+            J_func=jacobian_func,
+            grad_eta_func=grad_eta,
+            x0=arm.angles,
+            verbose=False,
+            max_iter=50
+        )
+        solutions.append(new_angles)
+    return solutions
+
 
 if __name__ == "__main__":
     arm_3d()
