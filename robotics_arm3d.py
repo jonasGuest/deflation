@@ -1,26 +1,27 @@
 from typing import List, Callable, Tuple
 
 import numpy as np
-import numpy.linalg
 import pyray
 import time
-from good import make_deflation_funcs, good, find_sol
+from good import find_sol
 
 class Arm:
-    def __init__(self, angles: np.ndarray, lengths: np.ndarray, rotation_axis: List[np.ndarray]):
-        assert angles.shape == lengths.shape
+    def __init__(self, angles: np.ndarray, rotation_axis: List[np.ndarray], r_i: List[np.ndarray]):
+        assert angles.shape[0] == len(r_i)
         assert len(rotation_axis) == angles.shape[0]
         self.angles = angles
-        self.lengths = lengths
         self.rotation_axis = rotation_axis
+        self.r_i = r_i
+
     def with_angles(self, angles: np.ndarray):
-        return Arm(angles, self.lengths, self.rotation_axis)
+        return Arm(angles, self.rotation_axis, self.r_i)
+
     def n(self):
         return self.angles.shape[0]
 
-
-# TODO make axis variable. hardcode axis of rotation to z_axis
 z_axis = np.array([0.0, 0.0, 1.0])
+y_axis = np.array([0.0, 1.0, 0.0])
+x_axis = np.array([1.0, 0.0, 0.0])
 
 def rot(axis: np.ndarray, angle: float) -> np.ndarray:
     # https://en.wikipedia.org/wiki/Rodrigues'_rotation_formula#Matrix_notation
@@ -32,22 +33,23 @@ def rot(axis: np.ndarray, angle: float) -> np.ndarray:
     return np.eye(3, 3) + np.sin(angle) * K + (1-np.cos(angle))* K@K
 
 def w_i(arm: Arm, i: int) -> np.ndarray:
-    w = z_axis
+    w = arm.rotation_axis[i]
     for j in range(i-1, -1, -1):
-        w = rot(z_axis, arm.angles[i]) @ w
+        w = rot(arm.rotation_axis[j], arm.angles[j]) @ w
     return w
 
 def jacobian(arm: Arm) -> np.ndarray:
     J = np.zeros(shape=(3, arm.n()))
+    end_effector_pos = s_i(arm, arm.n())
+
     for i in range(arm.n()):
-        J[:, i] = np.cross(w_i(arm, i), (s_i(arm, arm.n()) - s_i(arm, i)))
+        J[:, i] = np.cross(w_i(arm, i), (end_effector_pos - s_i(arm, i)))
     return J
 
 def s_i(arm: Arm, i: int) -> np.ndarray:
     tip = np.array([0., 0., 0.])
     for j in range(i-1, -1, -1):
-        r = np.array([arm.lengths[j], 0.0, 0.0])
-        tip = rot(z_axis, arm.angles[j]) @ (tip + r)
+        tip = rot(arm.rotation_axis[j], arm.angles[j]) @ (tip + arm.r_i[j])
 
     return tip
 
@@ -57,18 +59,14 @@ def np_to_pyray(vec: np.ndarray) -> pyray.Vector3:
     return pyray.Vector3(vec[0], vec[1], vec[2])
 
 def draw_arm(arm: Arm, is_primary: bool = True):
-    # if is_primary:
-    #     joint_color = pyray.MAROON
-    #     segment_color = pyray.DARKGRAY
-    # else:
     if is_primary:
+        joint_color = pyray.Color(0, 0, 0, 255)
+        segment_color = pyray.Color(20, 20, 20, 200)
+    else :
         joint_color = pyray.Color(255, 255, 0, 100)
         segment_color = pyray.Color(255, 255, 0, 100)
-    else :
-        joint_color = pyray.Color(0, 0, 255, 200)
-        segment_color = pyray.Color(0, 0, 200, 100)
-    segment_radius = 0.1
-    joint_radius = 0.2
+    segment_radius = 0.08
+    joint_radius = 0.15
 
     for i in range(arm.n()):
         current_pos = np_to_pyray(s_i(arm, i))
@@ -80,92 +78,125 @@ def draw_arm(arm: Arm, is_primary: bool = True):
 
     # Draw end effector tip
     if is_primary:
-        pyray.draw_sphere(np_to_pyray(s_i(arm, arm.n())), joint_radius * 0.8, pyray.GOLD)
+        pyray.draw_sphere(np_to_pyray(s_i(arm, arm.n())), joint_radius * 0.8, pyray.BLACK)
 
 # -------------------------
 
+class MyCamera:
+    def __init__(self):
+        self.orbit_center = np.array([0.0, 2.0, 0.0])
+        self.radius = 13.0
+        self.yaw = np.pi / 4.0
+        self.pitch = np.pi / 9.0
+        self.rot_speed = 0.02
+
+        self.camera = pyray.Camera3D()
+        self.camera.target = np_to_pyray(self.orbit_center)
+        self.camera.up = pyray.Vector3(0.0, 1.0, 0.0)
+        self.camera.fovy = 45.0
+        self.camera.projection = pyray.CameraProjection.CAMERA_PERSPECTIVE
+    def a_pressed(self):
+        self.yaw -= self.rot_speed
+    def d_pressed(self):
+        self.yaw += self.rot_speed
+    def w_pressed(self):
+        self.pitch += self.rot_speed
+    def s_pressed(self):
+        self.pitch -= self.rot_speed
+    def update(self):
+        self.pitch = np.clip(self.pitch, 0.1, np.pi/2 - 0.1)
+        new_cam_x = self.orbit_center[0] + self.radius * np.cos(self.pitch) * np.cos(self.yaw)
+        new_cam_z = self.orbit_center[2] + self.radius * np.cos(self.pitch) * np.sin(self.yaw)
+        new_cam_y = self.orbit_center[1] + self.radius * np.sin(self.radius)
+
+        self.camera.position = pyray.Vector3(new_cam_x, new_cam_y, new_cam_z)
+
 def arm_3d():
-    pyray.init_window(1200, 800, "IK with Levenberg-Marquardt (Fixed)")
+    pyray.init_window(1200, 800, "IK with Levenberg-Marquardt (Vertical Interaction Plane)")
     pyray.set_target_fps(60)
 
-    # Camera setup
-    camera = pyray.Camera3D()
-    camera.position = pyray.Vector3(8.0, 8.0, 8.0)
-    camera.target = pyray.Vector3(0.0, 2.0, 0.0)
-    camera.up = pyray.Vector3(0.0, 1.0, 0.0)
-    camera.fovy = 45.0
-    camera.projection = pyray.CameraProjection.CAMERA_PERSPECTIVE
+    camera = MyCamera()
+    arm_angles = np.array([-0.5, 0.5, 0.5, 0.5])
+    arm_rotation_axis = [y_axis, z_axis, z_axis, z_axis]
+    r_i = [
+        np.array([0.0, 0.5, 0.0]),
+        np.array([2.0, 0.0, 0.0]),
+        np.array([2.0, 0.0, 0.0]),
+        np.array([2.0, 0.0, 0.0]),
+    ]
 
-    # Arm Setup
-    arm_angles = np.array([0.5, 0.5, 0.5])
-    arm_lengths = np.array([3.0, 2.0, 2.0])
-    arm_rotation_axis = [z_axis, z_axis, z_axis]
-
-    arm = Arm(arm_angles, arm_lengths, arm_rotation_axis)
-
-    target_pos = np.array([-3.0, 1.0, 0.0])
-
-    def residuals_func(x):
-        return s_i(arm.with_angles(x), arm.n()) - target_pos
+    arm = Arm(arm_angles, arm_rotation_axis, r_i)
+    target_pos = np.array([-3.0, 1.0, -1.0])
 
     def jacobian_func(x):
         return jacobian(arm.with_angles(x))
 
-    mu, grad_eta = make_deflation_funcs([])
-    new_angles, path = good(
-        r_func=residuals_func,
-        J_func=jacobian_func,
-        grad_eta_func=grad_eta,
-        x0=arm.angles
-    )
-    arm.angles = new_angles
+    secondary_solutions = find_multiple_solutions(arm, jacobian_func, target_pos)
+    arm.angles = secondary_solutions[0]
+    secondary_solutions = secondary_solutions[1:]
 
-    solutions = find_multiple_solutions(arm, jacobian_func, target_pos)
+
+    last_time_target_selected = time.time()
 
     while not pyray.window_should_close():
-        # --- Update ---
-        # pyray.update_camera(camera, pyray.CameraMode.CAMERA_ORBITAL)
+        if pyray.is_key_down(pyray.KeyboardKey.KEY_A):
+            camera.a_pressed()
+        if pyray.is_key_down(pyray.KeyboardKey.KEY_D):
+            camera.d_pressed()
+        if pyray.is_key_down(pyray.KeyboardKey.KEY_W):
+            camera.w_pressed()
+        if pyray.is_key_down(pyray.KeyboardKey.KEY_S):
+            camera.s_pressed()
 
-        # --- 3. Draw ---
+        camera.update()
+
         pyray.begin_drawing()
         pyray.clear_background(pyray.RAYWHITE)
-        pyray.begin_mode_3d(camera)
+        pyray.begin_mode_3d(camera.camera)
 
         pyray.draw_grid(20, 1.0)
-        pyray.draw_sphere(np_to_pyray(target_pos), 0.3, pyray.GREEN)
+        pyray.draw_sphere(np_to_pyray(target_pos), 0.18, pyray.GREEN)
 
-        # --- Mouse Interaction ---
-        if pyray.is_mouse_button_down(pyray.MouseButton.MOUSE_BUTTON_LEFT):
-            ray = pyray.get_screen_to_world_ray(pyray.get_mouse_position(), camera)
+        pyray.draw_line_3d(pyray.Vector3(0,0,0), pyray.Vector3(2,0,0), pyray.RED)
+        pyray.draw_line_3d(pyray.Vector3(0,0,0), pyray.Vector3(0,2,0), pyray.GREEN)
+        pyray.draw_line_3d(pyray.Vector3(0,0,0), pyray.Vector3(0,0,2), pyray.BLUE)
 
-            if abs(ray.direction.z) > 1e-6:
-                t = -ray.position.z / ray.direction.z
+        # --- NEW Interaction Logic ---
+        now = time.time()
+        if pyray.is_mouse_button_down(pyray.MouseButton.MOUSE_BUTTON_LEFT) and now - last_time_target_selected > 0.5:
+            last_time_target_selected = now
+            ray = pyray.get_screen_to_world_ray(pyray.get_mouse_position(), camera.camera)
 
-                # Check if the intersection is in front of the camera
-                if t > 0:
-                    hit_x = ray.position.x + ray.direction.x * t
-                    hit_y = ray.position.y + ray.direction.y * t
+            plane_normal = np.array([camera.camera.position.x, 0.0, camera.camera.position.z])
+            norm_len = np.linalg.norm(plane_normal)
 
-                    target_pos = np.array([hit_x, hit_y, 0.0])
+            if norm_len > 1e-6:
+                plane_normal /= norm_len
 
-                    # 3. Re-run IK
-                    # We redefine the residual function to use the NEW target_pos
-                    solutions = find_multiple_solutions(arm, jacobian_func, target_pos)
-                    # print("solutions: ", solutions)
-                    arm.angles = solutions[0]
+                ro = np.array([ray.position.x, ray.position.y, ray.position.z])
+                rd = np.array([ray.direction.x, ray.direction.y, ray.direction.z])
 
-        for i,solution in enumerate(solutions):
-            print(i, solution)
-            other_arm = arm.with_angles(solution)
-            draw_arm(other_arm, i==0)
+                denom = np.dot(rd, plane_normal)
+                if abs(denom) > 1e-6:
+                    t = -np.dot(ro, plane_normal) / denom
 
-        print()
+                    if t > 0:
+                        hit = ro + t * rd
+                        target_pos = hit
+
+                        # Solve IK
+                        new_solutions = find_multiple_solutions(arm, jacobian_func, target_pos)
+                        if len(new_solutions) > 0:
+                            arm.angles = new_solutions[0]
+                            secondary_solutions = new_solutions[1:]
+
+        for solution in secondary_solutions:
+            draw_arm(arm.with_angles(solution), False)
+        draw_arm(arm, True)
 
         pyray.end_mode_3d()
 
-        # UI
-        pyray.draw_text("Target Control: W/A/S/D (Planar), Q/E (Height)", 10, 10, 20, pyray.DARKGRAY)
-        pyray.draw_text(f"Target: [{target_pos[0]:.2f}, {target_pos[1]:.2f}, {target_pos[2]:.2f}]", 10, 40, 20, pyray.BLACK)
+        pyray.draw_text("Target Control: Click to move on vertical facing plane", 10, 10, 20, pyray.DARKGRAY)
         pyray.draw_fps(10, 70)
 
         pyray.end_drawing()
@@ -176,13 +207,13 @@ def arm_3d():
 def find_multiple_solutions(arm: Arm, jacobian_func: Callable[[np.ndarray], np.ndarray], target_pos: np.ndarray):
     def residuals_func_dynamic(x):
         return s_i(arm.with_angles(x), arm.n()) - target_pos
-
     solutions = []
+
     for i in range(3):
         new_angles = find_sol(residuals_func_dynamic, jacobian_func, arm.angles, solutions)
-        solutions.append(new_angles)
+        if new_angles is not None:
+            solutions.append(new_angles)
     return solutions
-
 
 if __name__ == "__main__":
     arm_3d()
