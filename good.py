@@ -5,6 +5,20 @@ from matplotlib.colors import LogNorm
 from typing import Callable, List, Tuple
 from line_search import backtracking_line_search_wikipedia, quadratic_line_search
 
+
+def find_sol(residual_func: Callable[[np.ndarray], np.ndarray], jacobian_func: Callable[[np.ndarray], np.ndarray],
+             x0: np.ndarray, deflated_solutions: List[np.ndarray]) -> np.ndarray:
+    _, grad_eta = make_deflation_funcs(deflated_solutions)
+    new_sol, _ = good(
+        r_func=residual_func,
+        J_func=jacobian_func,
+        grad_eta_func=grad_eta,
+        x0=x0,
+        verbose=False,
+        max_iter=50
+    )
+    return new_sol
+
 def good(
         r_func: Callable[[np.ndarray], np.ndarray],
         J_func: Callable[[np.ndarray], np.ndarray],
@@ -47,10 +61,10 @@ def good(
             #     p_k = p_k * (max_step_size / step_norm)
             #     if verbose:
             #         print(f"Iter {k}: Step clipped from {step_norm:.2e} to {max_step_size}, x was {x_k}")
-            pk_slope = np.dot(J_k.T@r_k, p_k)
+            pk_slope = np.dot(J_k.T @ r_k, p_k)
             scalar_r = lambda x: 0.5 * np.dot(r_func(x), r_func(x))
             # alpha = backtracking_line_search_wikipedia(scalar_r, pk_slope,  p_k, x_k)
-            alpha = quadratic_line_search(scalar_r, pk_slope,  p_k, x_k)
+            alpha = quadratic_line_search(scalar_r, pk_slope, p_k, x_k)
             # alpha = 1.0
             x_k = x_k + alpha * p_k
 
@@ -58,16 +72,20 @@ def good(
 
     return x_k, history
 
+
 def residual_func(x: np.ndarray) -> np.ndarray:
     """r(x,y) = [x^2 + y - 11, x + y^2 - 7]"""
     return np.array([
-        x[0]**2 + x[1] - 11.0,
-        x[0] + x[1]**2 - 7.0
+        x[0] ** 2 + x[1] - 11.0,
+        x[0] + x[1] ** 2 - 7.0
     ])
+
+
 def residual_scalar_func(x: np.ndarray) -> float:
     """Scalar objective: 0.5 * ||r(x,y)||^2"""
     r = residual_func(x)
     return 0.5 * np.dot(r, r)
+
 
 def jacobian_func(x: np.ndarray) -> np.ndarray:
     """Jacobian of r(x,y)"""
@@ -75,6 +93,7 @@ def jacobian_func(x: np.ndarray) -> np.ndarray:
         [2.0 * x[0], 1.0],
         [1.0, 2.0 * x[1]]
     ])
+
 
 def numeric_gradient(func: Callable[[np.ndarray], float], x: np.ndarray, h: float = 1e-8) -> np.ndarray:
     """
@@ -97,6 +116,7 @@ def numeric_gradient(func: Callable[[np.ndarray], float], x: np.ndarray, h: floa
         grad[i] = (func(x_plus) - func(x_minus)) / (2.0 * h)
     return grad
 
+
 def numeric_jacobian(
         r_func: Callable[[np.ndarray], np.ndarray],
         x: np.ndarray,
@@ -115,7 +135,7 @@ def numeric_jacobian(
     """
     r0 = r_func(x)
     m = len(r0)  # Number of residuals
-    n = len(x)   # Number of variables
+    n = len(x)  # Number of variables
     J = np.zeros((m, n))
 
     for j in range(n):
@@ -129,6 +149,7 @@ def numeric_jacobian(
 
     return J
 
+
 def make_deflation_funcs(
         known_solutions: List[np.ndarray],
 ) -> Tuple[Callable, Callable]:
@@ -137,7 +158,7 @@ def make_deflation_funcs(
         eta = 1.0
         for sol in known_solutions:
             diff = x - sol
-            eta *= 1.0+1.0/np.abs(np.dot(diff, diff))
+            eta *= 1.0 + 1.0 / np.abs(np.dot(diff, diff))
         return eta
 
     def grad_eta(x: np.ndarray) -> np.ndarray:
@@ -213,18 +234,18 @@ if __name__ == "__main__":
         # Plot all previous paths
         for j in range(i + 1):
             ax_deflated.plot(*zip(*paths[j]), 'o-',
-                    label=f"Path {j}",
-                    markersize=3, linewidth=2)
+                             label=f"Path {j}",
+                             markersize=3, linewidth=2)
 
         # Plot the initial guess
         ax_deflated.plot(x0[0], x0[1], 'kx', markersize=12,
-                markeredgewidth=3, label='Start Point')
+                         markeredgewidth=3, label='Start Point')
 
         # Plot all found solutions
         if sols:
             ax_deflated.plot(*zip(*sols), 'r',
-                    markersize=20, markeredgewidth=2,
-                    label='Solutions')
+                             markersize=20, markeredgewidth=2,
+                             label='Solutions')
 
         ax_deflated.set_title(f'Deflated Objective After Solution {i}', fontsize=12)
         ax_deflated.set_xlabel('x', fontsize=10)

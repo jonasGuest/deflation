@@ -4,7 +4,7 @@ import numpy as np
 import numpy.linalg
 import pyray
 import time
-from good import make_deflation_funcs, good
+from good import make_deflation_funcs, good, find_sol
 
 class Arm:
     def __init__(self, angles: np.ndarray, lengths: np.ndarray, rotation_axis: List[np.ndarray]):
@@ -61,8 +61,12 @@ def draw_arm(arm: Arm, is_primary: bool = True):
     #     joint_color = pyray.MAROON
     #     segment_color = pyray.DARKGRAY
     # else:
-    joint_color = pyray.Color(255, 255, 0, 100)
-    segment_color = pyray.Color(255, 255, 0, 100)
+    if is_primary:
+        joint_color = pyray.Color(255, 255, 0, 100)
+        segment_color = pyray.Color(255, 255, 0, 100)
+    else :
+        joint_color = pyray.Color(0, 0, 255, 200)
+        segment_color = pyray.Color(0, 0, 200, 100)
     segment_radius = 0.1
     joint_radius = 0.2
 
@@ -116,7 +120,7 @@ def arm_3d():
     )
     arm.angles = new_angles
 
-    solutions = [arm.angles]
+    solutions = find_multiple_solutions(arm, jacobian_func, target_pos)
 
     while not pyray.window_should_close():
         # --- Update ---
@@ -147,12 +151,15 @@ def arm_3d():
                     # 3. Re-run IK
                     # We redefine the residual function to use the NEW target_pos
                     solutions = find_multiple_solutions(arm, jacobian_func, target_pos)
+                    # print("solutions: ", solutions)
                     arm.angles = solutions[0]
 
         for i,solution in enumerate(solutions):
             print(i, solution)
             other_arm = arm.with_angles(solution)
             draw_arm(other_arm, i==0)
+
+        print()
 
         pyray.end_mode_3d()
 
@@ -172,15 +179,7 @@ def find_multiple_solutions(arm: Arm, jacobian_func: Callable[[np.ndarray], np.n
 
     solutions = []
     for i in range(3):
-        _, grad_eta = make_deflation_funcs(solutions)
-        new_angles, _ = good(
-            r_func=residuals_func_dynamic,
-            J_func=jacobian_func,
-            grad_eta_func=grad_eta,
-            x0=arm.angles,
-            verbose=False,
-            max_iter=50
-        )
+        new_angles = find_sol(residuals_func_dynamic, jacobian_func, arm.angles, solutions)
         solutions.append(new_angles)
     return solutions
 
