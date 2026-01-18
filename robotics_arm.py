@@ -103,7 +103,7 @@ def render_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarray, colo
         pyray.draw_circle(int(start[0]), int(start[1]), 10, pyray.fade(color, opacity))
 
 
-def arm_2d():
+if __name__ == "__main__":
     # Example usage
     lengths = np.array([50.0, 100.0, 75.0, 30, 20])
 
@@ -172,7 +172,3 @@ def arm_2d():
 
     pyray.close_window()
 
-
-
-if __name__ == "__main__":
-    arm_2d()
