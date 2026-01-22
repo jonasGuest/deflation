@@ -53,6 +53,8 @@ def s_i(arm: Arm, i: int) -> np.ndarray:
 
     return tip
 
+def lerp(current: np.ndarray, target: np.ndarray, t: float) -> np.ndarray:
+    return current * (1 - t) + target * t
 
 # pyray ----------------------
 def np_to_pyray(vec: np.ndarray) -> pyray.Vector3:
@@ -116,7 +118,7 @@ def arm_3d():
     pyray.set_target_fps(60)
 
     camera = MyCamera()
-    arm_angles = np.array([-0.5, 0.5, 0.5, 0.5])
+    initial_angles = np.array([-0.5, 0.5, 0.5, 0.5])
     arm_rotation_axis = [y_axis, z_axis, z_axis, z_axis]
     r_i = [
         np.array([0.0, 0.5, 0.0]),
@@ -125,17 +127,23 @@ def arm_3d():
         np.array([2.0, 0.0, 0.0]),
     ]
 
-    arm = Arm(arm_angles, arm_rotation_axis, r_i)
+    arm = Arm(initial_angles, arm_rotation_axis, r_i)
     target_pos = np.array([-3.0, 1.0, -1.0])
 
     def jacobian_func(x):
         return jacobian(arm.with_angles(x))
 
     secondary_solutions = find_multiple_solutions(arm, jacobian_func, target_pos)
-    arm.angles = secondary_solutions[0]
-    secondary_solutions = secondary_solutions[1:]
 
+    start_angles = initial_angles.copy()
+    if len(secondary_solutions) > 0:
+        target_angles = secondary_solutions[0]
+        secondary_solutions = secondary_solutions[1:]
+    else:
+        target_angles = initial_angles.copy()
 
+    animation_duration = 0.4
+    animation_start = time.time()
     last_time_target_selected = time.time()
 
     while not pyray.window_should_close():
@@ -161,9 +169,9 @@ def arm_3d():
         pyray.draw_line_3d(pyray.Vector3(0,0,0), pyray.Vector3(0,2,0), pyray.GREEN)
         pyray.draw_line_3d(pyray.Vector3(0,0,0), pyray.Vector3(0,0,2), pyray.BLUE)
 
-        # --- NEW Interaction Logic ---
+        # --- Interaction Logic ---
         now = time.time()
-        if pyray.is_mouse_button_down(pyray.MouseButton.MOUSE_BUTTON_LEFT) and now - last_time_target_selected > 0.5:
+        if pyray.is_mouse_button_down(pyray.MouseButton.MOUSE_BUTTON_LEFT) and now - last_time_target_selected > 0.2:
             last_time_target_selected = now
             ray = pyray.get_screen_to_world_ray(pyray.get_mouse_position(), camera.camera)
 
@@ -184,15 +192,35 @@ def arm_3d():
                         hit = ro + t * rd
                         target_pos = hit
 
+                        # Snap start_angles to current visual position to prevent jumping
+                        elapsed = now - animation_start
+                        animation_percent = min(elapsed / animation_duration, 1.0)
+                        start_angles = lerp(start_angles, target_angles, animation_percent)
+
+                        # Update arm internal angles for the solver (start search from current visual)
+                        arm.angles = start_angles
+
                         # Solve IK
                         new_solutions = find_multiple_solutions(arm, jacobian_func, target_pos)
                         if len(new_solutions) > 0:
-                            arm.angles = new_solutions[0]
+                            target_angles = new_solutions[0]
                             secondary_solutions = new_solutions[1:]
+                            animation_start = now
 
+        # --- Animation Logic ---
+        current_time = time.time()
+        elapsed = current_time - animation_start
+        animation_percent = min(elapsed / animation_duration, 1.0)
+
+        # Calculate visual angles for this frame
+        draw_angles = lerp(start_angles, target_angles, animation_percent)
+
+        # Draw Secondary (Ghost) Solutions
         for solution in secondary_solutions:
             draw_arm(arm.with_angles(solution), False)
-        draw_arm(arm, True)
+
+        # Draw Primary Arm
+        draw_arm(arm.with_angles(draw_angles), True)
 
         pyray.end_mode_3d()
 
