@@ -1,5 +1,4 @@
 from typing import List, Callable, Tuple
-
 import numpy as np
 import pyray
 import time
@@ -19,9 +18,11 @@ class Arm:
     def n(self):
         return self.angles.shape[0]
 
+
 z_axis = np.array([0.0, 0.0, 1.0])
 y_axis = np.array([0.0, 1.0, 0.0])
 x_axis = np.array([1.0, 0.0, 0.0])
+
 
 def rot(axis: np.ndarray, angle: float) -> np.ndarray:
     # https://en.wikipedia.org/wiki/Rodrigues'_rotation_formula#Matrix_notation
@@ -30,13 +31,15 @@ def rot(axis: np.ndarray, angle: float) -> np.ndarray:
         [axis[2], 0.0, -axis[0]],
         [-axis[1], axis[0], 0.0]
     ])
-    return np.eye(3, 3) + np.sin(angle) * K + (1-np.cos(angle))* K@K
+    return np.eye(3, 3) + np.sin(angle) * K + (1 - np.cos(angle)) * K @ K
+
 
 def w_i(arm: Arm, i: int) -> np.ndarray:
     w = arm.rotation_axis[i]
-    for j in range(i-1, -1, -1):
+    for j in range(i - 1, -1, -1):
         w = rot(arm.rotation_axis[j], arm.angles[j]) @ w
     return w
+
 
 def jacobian(arm: Arm) -> np.ndarray:
     J = np.zeros(shape=(3, arm.n()))
@@ -46,25 +49,29 @@ def jacobian(arm: Arm) -> np.ndarray:
         J[:, i] = np.cross(w_i(arm, i), (end_effector_pos - s_i(arm, i)))
     return J
 
+
 def s_i(arm: Arm, i: int) -> np.ndarray:
     tip = np.array([0., 0., 0.])
-    for j in range(i-1, -1, -1):
+    for j in range(i - 1, -1, -1):
         tip = rot(arm.rotation_axis[j], arm.angles[j]) @ (tip + arm.r_i[j])
 
     return tip
 
+
 def lerp(current: np.ndarray, target: np.ndarray, t: float) -> np.ndarray:
     return current * (1 - t) + target * t
+
 
 # pyray ----------------------
 def np_to_pyray(vec: np.ndarray) -> pyray.Vector3:
     return pyray.Vector3(vec[0], vec[1], vec[2])
 
+
 def draw_arm(arm: Arm, is_primary: bool = True):
     if is_primary:
         joint_color = pyray.Color(0, 0, 0, 255)
         segment_color = pyray.Color(20, 20, 20, 200)
-    else :
+    else:
         joint_color = pyray.Color(255, 255, 0, 100)
         segment_color = pyray.Color(255, 255, 0, 100)
     segment_radius = 0.08
@@ -82,7 +89,25 @@ def draw_arm(arm: Arm, is_primary: bool = True):
     if is_primary:
         pyray.draw_sphere(np_to_pyray(s_i(arm, arm.n())), joint_radius * 0.8, pyray.BLACK)
 
-# -------------------------
+
+def select_primary_solution(solutions: List[np.ndarray], current_arm: Arm, target_pos: np.ndarray) -> Tuple[np.ndarray, List[np.ndarray]]:
+    assert len(solutions) > 0, "No solutions provided"
+    assert len(solutions[0]) == len(current_arm.angles)
+    assert len(target_pos) == 3
+
+    def cost(solution: np.ndarray) -> float:
+        angle_diff = np.linalg.norm(current_arm.angles - solution) ** 2
+        temp_arm = current_arm.with_angles(solution)
+        pos_diff = np.linalg.norm(s_i(temp_arm, temp_arm.n()) - target_pos) ** 2
+        return float(angle_diff + 10 * pos_diff)
+    best_solution = solutions[0]
+    min_cost = cost(best_solution)
+    for solution in solutions[1:]:
+        c = cost(solution)
+        if c < min_cost:
+            min_cost = c
+            best_solution = solution
+    return best_solution, [sol for sol in solutions if not np.array_equal(sol, best_solution)]
 
 class MyCamera:
     def __init__(self):
@@ -97,21 +122,27 @@ class MyCamera:
         self.camera.up = pyray.Vector3(0.0, 1.0, 0.0)
         self.camera.fovy = 45.0
         self.camera.projection = pyray.CameraProjection.CAMERA_PERSPECTIVE
+
     def a_pressed(self):
         self.yaw -= self.rot_speed
+
     def d_pressed(self):
         self.yaw += self.rot_speed
+
     def w_pressed(self):
         self.pitch += self.rot_speed
+
     def s_pressed(self):
         self.pitch -= self.rot_speed
+
     def update(self):
-        self.pitch = np.clip(self.pitch, 0.1, np.pi/2 - 0.1)
+        self.pitch = np.clip(self.pitch, 0.1, np.pi / 2 - 0.1)
         new_cam_x = self.orbit_center[0] + self.radius * np.cos(self.pitch) * np.cos(self.yaw)
         new_cam_z = self.orbit_center[2] + self.radius * np.cos(self.pitch) * np.sin(self.yaw)
         new_cam_y = self.orbit_center[1] + self.radius * np.sin(self.radius)
 
         self.camera.position = pyray.Vector3(new_cam_x, new_cam_y, new_cam_z)
+
 
 def arm_3d():
     pyray.init_window(1200, 800, "IK with Levenberg-Marquardt (Vertical Interaction Plane)")
@@ -137,8 +168,7 @@ def arm_3d():
 
     start_angles = initial_angles.copy()
     if len(secondary_solutions) > 0:
-        target_angles = secondary_solutions[0]
-        secondary_solutions = secondary_solutions[1:]
+        target_angles, secondary_solutions = select_primary_solution(secondary_solutions, arm, target_pos)
     else:
         target_angles = initial_angles.copy()
 
@@ -165,9 +195,9 @@ def arm_3d():
         pyray.draw_grid(20, 1.0)
         pyray.draw_sphere(np_to_pyray(target_pos), 0.18, pyray.GREEN)
 
-        pyray.draw_line_3d(pyray.Vector3(0,0,0), pyray.Vector3(2,0,0), pyray.RED)
-        pyray.draw_line_3d(pyray.Vector3(0,0,0), pyray.Vector3(0,2,0), pyray.GREEN)
-        pyray.draw_line_3d(pyray.Vector3(0,0,0), pyray.Vector3(0,0,2), pyray.BLUE)
+        pyray.draw_line_3d(pyray.Vector3(0, 0, 0), pyray.Vector3(2, 0, 0), pyray.RED)
+        pyray.draw_line_3d(pyray.Vector3(0, 0, 0), pyray.Vector3(0, 2, 0), pyray.GREEN)
+        pyray.draw_line_3d(pyray.Vector3(0, 0, 0), pyray.Vector3(0, 0, 2), pyray.BLUE)
 
         # --- Interaction Logic ---
         now = time.time()
@@ -203,8 +233,8 @@ def arm_3d():
                         # Solve IK
                         new_solutions = find_multiple_solutions(arm, jacobian_func, target_pos)
                         if len(new_solutions) > 0:
-                            target_angles = new_solutions[0]
-                            secondary_solutions = new_solutions[1:]
+                            target_angles, secondary_solutions = select_primary_solution(new_solutions, arm,
+                                                                                         target_pos)
                             animation_start = now
 
         # --- Animation Logic ---
@@ -235,6 +265,7 @@ def arm_3d():
 def find_multiple_solutions(arm: Arm, jacobian_func: Callable[[np.ndarray], np.ndarray], target_pos: np.ndarray):
     def residuals_func_dynamic(x):
         return s_i(arm.with_angles(x), arm.n()) - target_pos
+
     solutions = []
 
     for i in range(3):
@@ -242,6 +273,7 @@ def find_multiple_solutions(arm: Arm, jacobian_func: Callable[[np.ndarray], np.n
         if new_angles is not None:
             solutions.append(new_angles)
     return solutions
+
 
 if __name__ == "__main__":
     arm_3d()
