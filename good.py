@@ -28,7 +28,8 @@ def good(
         tol: float = 1e-3,
         max_iter: int = 100,
         verbose: bool = True,
-        limit_step: float = 1,
+        limit_step_undeflated: float = 1.0,
+        limit_step_deflated: float = 10.0,
 ) -> Tuple[np.ndarray, List[np.ndarray]]:
     x_k = np.array(x0, dtype=float)
     history = [x_k.copy()]
@@ -50,12 +51,15 @@ def good(
         inner_prod = np.dot(p_k, grad_eta_k)
 
         if inner_prod > epsilon:
-            # print("deflated step")
             beta = 1.0 - inner_prod
-            x_k = x_k + p_k / beta
+            deflated_step = p_k / beta
+            deflated_step_norm = np.linalg.norm(deflated_step)
+            if deflated_step_norm > limit_step_deflated:
+                deflated_step = np.minimum(limit_step_deflated / deflated_step_norm, 1.0) * deflated_step
+            x_k = x_k + deflated_step
         else:
             # print(step_norm)
-            p_k = np.minimum(limit_step / step_norm, 1.0) * p_k
+            p_k = np.minimum(limit_step_undeflated / step_norm, 1.0) * p_k
 
             # if step_norm > max_step_size:
             #     p_k = p_k * (max_step_size / step_norm)
@@ -64,7 +68,7 @@ def good(
             pk_slope = np.dot(J_k.T @ r_k, p_k)
             scalar_r = lambda x: 0.5 * np.dot(r_func(x), r_func(x))
             # alpha = backtracking_line_search_wikipedia(scalar_r, pk_slope,  p_k, x_k)
-            alpha = quadratic_line_search(scalar_r, pk_slope, p_k, x_k)
+            alpha = backtracking_line_search_wikipedia(scalar_r, pk_slope, p_k, x_k)
             # alpha = 1.0
             x_k = x_k + alpha * p_k
 
@@ -161,11 +165,23 @@ def make_deflation_funcs(
             eta *= 1.0 + 1.0 / np.abs(np.dot(diff, diff))
         return eta
 
-    def grad_eta(x: np.ndarray) -> np.ndarray:
-        """Gradient of eta computed numerically."""
-        return numeric_gradient(lambda y: np.log(mu(y)), x)
+    def grad_log_eta_analytical(x: np.ndarray) -> np.ndarray:
+        """
+        Gradient of ln(mu(x)) computed analytically.
+        Formula: Sum_k [ -2 * (x - x_k) / (dist_sq * (1 + dist_sq)) ]
+        """
+        grad = np.zeros_like(x)
 
-    return mu, grad_eta
+        for sol in known_solutions:
+            diff = x - sol
+            dist_sq = np.dot(diff, diff)
+            if dist_sq == 0:
+                continue
+            scalar = -2.0 / (dist_sq * (1.0 + dist_sq))
+            grad += scalar * diff
+        return grad
+
+    return mu, grad_log_eta_analytical
 
 
 if __name__ == "__main__":

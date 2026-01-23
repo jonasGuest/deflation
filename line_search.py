@@ -25,7 +25,7 @@ def backtracking_line_search_wikipedia(f: Callable[[np.ndarray], float],
                                        p: np.ndarray,
                                        x: np.ndarray,
                                        alpha_0: float = 1.0,
-                                       tau=0.5, c=1e-4,
+                                       tau=0.8, c=1e-4,
                                        max_iter: int = 100) -> float:
     t = c*slope_p
     alpha = alpha_0
