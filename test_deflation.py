@@ -3,7 +3,7 @@ from typing import Callable, Optional, Dict, Any, List
 import good
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, ListedColormap, BoundaryNorm
 
 
 def scalar_to_residual(f):
@@ -161,7 +161,7 @@ def plot3d(
     fig.show()
 
 
-def test_himmelblau():
+def plot_himmelblau():
     solutions: List[np.ndarray] = [
         np.array([2.99999999, 1.99999999]),
         np.array([-3.77931025, -3.28318599]),
@@ -199,13 +199,149 @@ def test_himmelblau():
     plot3d('mu', lambda x: np.minimum(mu(x), 100), x_range, y_range)
     plot3d('residual_scalar_func', good.residual_scalar_func, x_range, y_range)
 
-    print(mu(np.array([3,1])), good.residual_scalar_func(np.array([3, 1])), good.residual_scalar_func(np.array([3, 1])) * mu(np.array([3, 1])))
-    print(g(np.array([3,1])))
-    print(mu(np.array([3.0997,1.786])), good.residual_scalar_func(np.array([3.0997, 1.786])), good.residual_scalar_func(np.array([3.0997, 1.786])) * mu(np.array([3.0997, 1.786])))
-    print(g(np.array([3.0997,1.786])))
+def test_himmelblau():
+    from good import make_deflation_funcs, good
+    from functions import himmelblau_residual, himmelblau_jacobi
+
+    epsilon = 0.01
+
+    sols = []
+    x0 = np.array([0, 0])
+    for i in range(4):
+        mu1, grad_eta1 = make_deflation_funcs(sols)
+        min1, path1 = good(himmelblau_residual,
+                           himmelblau_jacobi,
+                           grad_eta1,
+                           x0,
+                           epsilon=epsilon,
+                           tol=1e-3,
+                           max_iter=300,
+                           limit_step_undeflated=3.0,
+                           )
+        sols.append(min1)
+        print(f"min1: {min1}")
+    xs = np.linspace(-6, 6, 500)
+    ys = np.linspace(-6, 6, 500)
+    X, Y = np.meshgrid(xs, ys)
+    beta_values = np.zeros(X.shape)
+
+    _, grad_eta = make_deflation_funcs(sols[:3])
+
+    rows, cols = X.shape
+    for i in range(rows):
+        for j in range(cols):
+            xy = np.array([X[i, j], Y[i, j]])
+            beta = good(himmelblau_residual, himmelblau_jacobi, grad_eta, xy, epsilon=epsilon, return_beta_instantly=True)
+            beta_values[i, j] = beta
+    plt.figure(figsize=(8, 6))
+    cmap_colors = ['lightcoral', 'orange', 'green']
+    cmap = ListedColormap(cmap_colors)
+
+    bounds = [-1000, -epsilon, 1-epsilon, 1000]
+    norm = BoundaryNorm(bounds, cmap.N)
+
+    mesh = plt.pcolormesh(X, Y, beta_values, cmap=cmap, norm=norm, shading='auto')
+
+    cbar = plt.colorbar(mesh, ticks=[-0.5, 0.5, 1.5])
+    cbar.ax.set_yticklabels(['Beta < 0', '0 < Beta < 1', 'Beta > 1'])
+
+    plt.contour(X, Y, (X**2 + Y - 11)**2 + (X + Y**2 - 7)**2, levels=20, colors='k', alpha=0.1, linewidths=0.5)
+    for idx, sol in enumerate(sols):
+        plt.plot(sol[0], sol[1], marker='x', color='black', markersize=12, markeredgewidth=3, label=f'Sol {idx+1}')
+
+    plt.title("Himmelblau Solutions & Beta Stability Regions")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.legend()
+    plt.xlim(-6, 6)
+    plt.ylim(-6, 6)
+    plt.show()
+
+
+import matplotlib.patches as mpatches
+
+
+def test_himmelblau_eps_zero():
+    from good import make_deflation_funcs, good
+    from functions import himmelblau_residual, himmelblau_jacobi
+
+    epsilon = 0.00
+
+    sols = []
+    x0 = np.array([0, 0])
+    for i in range(4):
+        mu1, grad_eta1 = make_deflation_funcs(sols)
+        min1, path1 = good(himmelblau_residual,
+                           himmelblau_jacobi,
+                           grad_eta1,
+                           x0,
+                           epsilon=epsilon,
+                           tol=1e-3,
+                           max_iter=300,
+                           limit_step_undeflated=3.0,
+                           )
+        sols.append(min1)
+        print(f"min1: {min1}")
+    xs = np.linspace(-6, 6, 500)
+    ys = np.linspace(-6, 6, 500)
+    X, Y = np.meshgrid(xs, ys)
+    beta_values = np.zeros(X.shape)
+
+    _, grad_eta = make_deflation_funcs(sols[:3])
+
+    rows, cols = X.shape
+    for i in range(rows):
+        for j in range(cols):
+            xy = np.array([X[i, j], Y[i, j]])
+            beta = good(himmelblau_residual, himmelblau_jacobi, grad_eta, xy, epsilon=epsilon, return_beta_instantly=True)
+            beta_values[i, j] = beta
+    plt.figure(figsize=(6, 4))
+    cmap_colors = ['lightcoral', 'orange', 'green']
+    cmap = ListedColormap(cmap_colors)
+
+    bounds = [-1000, -epsilon, 1-epsilon, 1000]
+    norm = BoundaryNorm(bounds, cmap.N)
+
+    mesh = plt.pcolormesh(X, Y, beta_values, cmap=cmap, norm=norm, shading='auto')
+
+    cbar = plt.colorbar(mesh, ticks=[-0.5, 0.5, 1.5])
+    cbar.ax.set_yticklabels(['Beta < 0', '0 < Beta < 1', 'Beta > 1'])
+
+    plt.contour(X, Y, (X**2 + Y - 11)**2 + (X + Y**2 - 7)**2, levels=20, colors='k', alpha=0.1, linewidths=0.5)
+    for idx, sol in enumerate(sols):
+        plt.plot(sol[0], sol[1], marker='x', color='black', markersize=12, markeredgewidth=3, label=f'Sol {idx+1}')
+
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.legend()
+    plt.xlim(-6, 6)
+    plt.ylim(-6, 6)
+    plt.show()
+
+def test_rosenbrock():
+    from good import make_deflation_funcs, good
+    from functions import rosenbrock_residual, rosenbrock_jacobi
+    sols = []
+
+    x0 = np.array([0, 0])
+    mu1, grad_eta1 = make_deflation_funcs(sols)
+    min1, path1 = good(rosenbrock_residual,
+                       rosenbrock_jacobi,
+                       grad_eta1,
+                       x0,
+                       epsilon=0.01,
+                       tol=1e-3,
+                       max_iter=300,
+                       limit_step_undeflated=2.0,
+                       )
+    print(f"min1: {min1}")
+
 
 if __name__ == "__main__":
     # test_ackley_func()
     deflation_on_test_problem_with_many_local_minima()
     # test_himmelblau()
+    # test_himmelblau()
+    # test_himmelblau_eps_zero()
     # find_minimas_with_scipy()
+    # test_rosenbrock()

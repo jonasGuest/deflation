@@ -9,6 +9,16 @@ def himmelblau(xy: np.ndarray) -> np.ndarray:
     x, y = xy[0], xy[1]
     return (x**2 + y - 11)**2 + (x + y**2 - 7)**2
 
+def himmelblau_residual(xy: np.ndarray) -> np.ndarray:
+    x, y = xy[0], xy[1]
+    return np.array([x**2 + y - 11,  x + y**2 - 7])
+
+def himmelblau_jacobi(xy: np.ndarray) -> np.ndarray:
+    x, y = xy[0], xy[1]
+    return np.array([
+        [2.0 * x, 1.0],
+        [1.0, 2.0 * y]
+    ])
 
 import numpy as np
 
@@ -218,6 +228,35 @@ def visualize_test_problem_with_many_local_minima():
     )
 
     fig_test.show()
+
+def rosenbrock_residual(x: np.ndarray) -> np.ndarray:
+    """
+    Returns the vector of residuals.
+    f(x) = sum(residuals^2)
+    """
+    return np.array([
+        10.0 * (x[1] - x[0] ** 2),  # r1. Squared gives 100*(y-x^2)^2
+        1.0 - x[0]  # r2. Squared gives (1-x)^2
+    ])
+
+
+def rosenbrock_jacobi(x: np.ndarray) -> np.ndarray:
+    """
+    Returns the Jacobian matrix of the residual vector.
+    J[i, j] = d(residual_i) / d(x_j)
+    """
+    # Derivatives of r1 = 10*(y - x^2)
+    dr1_dx = 10.0 * (-2.0 * x[0])  # -20x
+    dr1_dy = 10.0 * 1.0  # 10
+
+    # Derivatives of r2 = 1 - x
+    dr2_dx = -1.0
+    dr2_dy = 0.0
+
+    return np.array([
+        [dr1_dx, dr1_dy],
+        [dr2_dx, dr2_dy]
+    ])
 
 if __name__ == "__main__":
     visualize_test_problem_with_many_local_minima()

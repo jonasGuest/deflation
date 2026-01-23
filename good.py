@@ -30,6 +30,7 @@ def good(
         verbose: bool = True,
         limit_step_undeflated: float = 1.0,
         limit_step_deflated: float = 10.0,
+        return_beta_instantly: bool = False,
 ) -> Tuple[np.ndarray, List[np.ndarray]]:
     x_k = np.array(x0, dtype=float)
     history = [x_k.copy()]
@@ -49,27 +50,21 @@ def good(
 
         grad_eta_k = grad_eta_func(x_k)
         inner_prod = np.dot(p_k, grad_eta_k)
+        beta = 1.0 - inner_prod
 
+        if return_beta_instantly:
+            return beta
         if inner_prod > epsilon:
-            beta = 1.0 - inner_prod
             deflated_step = p_k / beta
             deflated_step_norm = np.linalg.norm(deflated_step)
             if deflated_step_norm > limit_step_deflated:
                 deflated_step = np.minimum(limit_step_deflated / deflated_step_norm, 1.0) * deflated_step
             x_k = x_k + deflated_step
         else:
-            # print(step_norm)
             p_k = np.minimum(limit_step_undeflated / step_norm, 1.0) * p_k
-
-            # if step_norm > max_step_size:
-            #     p_k = p_k * (max_step_size / step_norm)
-            #     if verbose:
-            #         print(f"Iter {k}: Step clipped from {step_norm:.2e} to {max_step_size}, x was {x_k}")
             pk_slope = np.dot(J_k.T @ r_k, p_k)
             scalar_r = lambda x: 0.5 * np.dot(r_func(x), r_func(x))
-            # alpha = backtracking_line_search_wikipedia(scalar_r, pk_slope,  p_k, x_k)
             alpha = backtracking_line_search_wikipedia(scalar_r, pk_slope, p_k, x_k)
-            # alpha = 1.0
             x_k = x_k + alpha * p_k
 
         history.append(x_k.copy())
