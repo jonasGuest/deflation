@@ -70,10 +70,10 @@ def np_to_pyray(vec: np.ndarray) -> pyray.Vector3:
 def draw_arm(arm: Arm, is_primary: bool = True):
     if is_primary:
         joint_color = pyray.Color(0, 0, 0, 255)
-        segment_color = pyray.Color(20, 20, 20, 200)
+        segment_color = pyray.Color(10, 10, 10, 200)
     else:
-        joint_color = pyray.Color(255, 255, 0, 100)
-        segment_color = pyray.Color(255, 255, 0, 100)
+        joint_color = pyray.Color(200, 200, 0, 100)
+        segment_color = pyray.Color(200, 200, 0, 100)
     segment_radius = 0.08
     joint_radius = 0.15
 
