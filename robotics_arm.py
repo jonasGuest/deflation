@@ -99,21 +99,41 @@ def render_arm(origin: np.ndarray, lengths: np.ndarray, angles: np.ndarray, colo
     for i in range(len(joints) - 1):
         start = joints[i]
         end = joints[i + 1]
-        pyray.draw_line_ex(start.tolist(), end.tolist(), 4.5, pyray.fade(color, opacity))
-        pyray.draw_circle(int(start[0]), int(start[1]), 10, pyray.fade(color, opacity))
+        pyray.draw_line_ex(start.tolist(), end.tolist(), 7.0, pyray.fade(color, opacity))
+        pyray.draw_circle(int(start[0]), int(start[1]), 16, pyray.fade(color, opacity))
 
 
 if __name__ == "__main__":
     # Example usage
-    lengths = np.array([50.0, 100.0, 75.0, 30, 20])
+    base_lengths = np.array([50.0, 100.0, 75.0, 30.0, 20.0])
 
     pyray.init_window(800, 450, "Demo - Python Raylib")
+    pyray.set_window_state(pyray.ConfigFlags.FLAG_WINDOW_RESIZABLE)
+    pyray.set_window_state(pyray.ConfigFlags.FLAG_WINDOW_MAXIMIZED)
     pyray.set_target_fps(60)
 
-    target = np.array([500.0, 300.0])
-
     angles = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
-    origin = np.array([400.0, 200.0])
+    lengths = base_lengths.copy()
+
+    def resize_scene(current_target: np.ndarray, current_origin: np.ndarray, current_lengths: np.ndarray):
+        screen_w = float(pyray.get_screen_width())
+        screen_h = float(pyray.get_screen_height())
+        new_origin = np.array([screen_w * 0.5, screen_h * 0.5])
+
+        total_base = float(np.sum(base_lengths))
+        scale = (0.75 * min(screen_w, screen_h)) / total_base if total_base > 1e-6 else 1.0
+        new_lengths = base_lengths * scale
+
+        prev_total = float(np.sum(current_lengths))
+        if prev_total > 1e-6:
+            offset_ratio = (current_target - current_origin) / prev_total
+        else:
+            offset_ratio = np.array([0.5, 0.0])
+
+        new_target = new_origin + offset_ratio * float(np.sum(new_lengths))
+        return new_origin, new_lengths, new_target
+
+    origin, lengths, target = resize_scene(np.array([500.0, 300.0]), np.array([400.0, 200.0]), lengths)
 
     # Initial Solve
     multiple_solutions = find_minimum_of_residuals(origin, lengths, angles, target)
@@ -124,6 +144,11 @@ if __name__ == "__main__":
     animation_start = time.time()
 
     while not pyray.window_should_close():
+        if pyray.is_key_pressed(pyray.KeyboardKey.KEY_F11):
+            pyray.toggle_fullscreen()
+
+        if pyray.is_window_resized():
+            origin, lengths, target = resize_scene(target, origin, lengths)
 
         # Input Handling
         if pyray.is_mouse_button_pressed(pyray.MouseButton.MOUSE_BUTTON_LEFT):
@@ -153,15 +178,15 @@ if __name__ == "__main__":
         # Rendering
         pyray.begin_drawing()
         pyray.clear_background(pyray.RAYWHITE)
-        pyray.draw_circle_v(target.tolist(), 3, pyray.GREEN)
+        pyray.draw_circle_v(target.tolist(), 8, pyray.GREEN)
 
         # Draw Arm
         render_arm(origin, lengths, draw_angles)
 
         # Draw UI
         pyray.draw_grid(20, 1.0)
-        pyray.draw_text("Click to move target", 190, 200, 20, pyray.VIOLET)
-        pyray.draw_fps(20, 20)
+        pyray.draw_text("Click to move target", 40, 40, 32, pyray.VIOLET)
+        pyray.draw_fps(40, 90)
 
         for i,solution in enumerate(multiple_solutions):
             tip = robotic_arm(origin, lengths, solution)
@@ -171,4 +196,3 @@ if __name__ == "__main__":
         pyray.end_drawing()
 
     pyray.close_window()
-

@@ -70,10 +70,10 @@ def np_to_pyray(vec: np.ndarray) -> pyray.Vector3:
 def draw_arm(arm: Arm, is_primary: bool = True):
     if is_primary:
         joint_color = pyray.Color(0, 0, 0, 255)
-        segment_color = pyray.Color(10, 10, 10, 200)
+        segment_color = pyray.Color(20, 20, 20, 200)
     else:
-        joint_color = pyray.Color(200, 200, 0, 100)
-        segment_color = pyray.Color(200, 200, 0, 100)
+        joint_color = pyray.Color(255, 255, 0, 100)
+        segment_color = pyray.Color(255, 255, 0, 100)
     segment_radius = 0.08
     joint_radius = 0.15
 
@@ -146,6 +146,8 @@ class MyCamera:
 
 def arm_3d():
     pyray.init_window(1200, 800, "IK with Levenberg-Marquardt (Vertical Interaction Plane)")
+    pyray.set_window_state(pyray.ConfigFlags.FLAG_WINDOW_RESIZABLE)
+    pyray.set_window_state(pyray.ConfigFlags.FLAG_WINDOW_MAXIMIZED)
     pyray.set_target_fps(60)
 
     camera = MyCamera()
@@ -177,6 +179,8 @@ def arm_3d():
     last_time_target_selected = time.time()
 
     while not pyray.window_should_close():
+        if pyray.is_key_pressed(pyray.KeyboardKey.KEY_F11):
+            pyray.toggle_fullscreen()
         if pyray.is_key_down(pyray.KeyboardKey.KEY_A):
             camera.a_pressed()
         if pyray.is_key_down(pyray.KeyboardKey.KEY_D):
